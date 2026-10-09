@@ -1,0 +1,49 @@
+from django.urls import path
+
+from .views import files, git_views, projects
+
+P = "projects/<slug:slug>/"
+
+urlpatterns = [
+    path("settings/", projects.app_settings),
+    path("credentials/", projects.credential_list),
+    path("credentials/<int:pk>/", projects.credential_detail),
+    path("projects/", projects.project_list),
+    path("projects/import/", projects.project_import),
+    path("projects/unregistered/", projects.unregistered_folders),
+    path(P, projects.project_detail),
+    # files & content
+    path(P + "tree/", files.tree),
+    path(P + "file/", files.file_detail),
+    path(P + "move/", files.move_file),
+    path(P + "upload/", files.upload),
+    path(P + "raw/", files.raw),
+    path(P + "manifest/", files.manifest),
+    path(P + "search/", files.search),
+    path(P + "stats/", files.stats),
+    path(P + "preview/", files.preview),
+    path(P + "export/", files.export),
+    path(P + "references/", files.references),
+    path(P + "references/<str:key>/", files.reference_detail),
+    path(P + "cite/", files.cite),
+    # git
+    path(P + "git/status/", git_views.status),
+    path(P + "git/commit/", git_views.commit),
+    path(P + "git/log/", git_views.log),
+    path(P + "git/commits/<str:sha>/", git_views.show),
+    path(P + "git/diff/", git_views.diff),
+    path(P + "git/file-at/", git_views.file_at),
+    path(P + "git/restore/", git_views.restore_version),
+    path(P + "git/discard/", git_views.discard),
+    path(P + "git/branches/", git_views.branches),
+    path(P + "git/checkout/", git_views.checkout),
+    path(P + "git/branches/delete/", git_views.delete_branch),
+    path(P + "git/merge/", git_views.merge),
+    path(P + "git/merge/abort/", git_views.merge_abort),
+    path(P + "git/conflict/", git_views.conflict),
+    path(P + "git/remotes/", git_views.remotes),
+    path(P + "git/remotes/<str:name>/", git_views.remote_detail),
+    path(P + "git/fetch/", git_views.fetch),
+    path(P + "git/pull/", git_views.pull),
+    path(P + "git/push/", git_views.push),
+]

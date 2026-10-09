@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+backend/staticfiles/
+
+# Node
+node_modules/
+frontend/dist/
+
+# App data (your projects and database live here)
+data/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
