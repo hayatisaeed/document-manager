@@ -552,6 +552,17 @@ def uninstall(install: Path, log=print) -> None:
 
 # ---------------------------------------------------------------- graphical installer
 
+def pandoc_status() -> str:
+    found = Installer.version_of("pandoc")
+    if not found:
+        return "will be downloaded"
+    try:
+        if tuple(int(x) for x in found.split()[-1].split(".")[:2]) < (3, 6):
+            return f"{found} — too old; a newer private copy will be installed"
+    except ValueError:
+        pass
+    return found
+
 def run_gui(opts: Options) -> int:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -589,7 +600,7 @@ def run_gui(opts: Options) -> int:
     rows = [
         ("Python", f"{platform.python_version()} ✓" if sys.version_info >= MIN_PYTHON else f"{platform.python_version()} — 3.10+ required ✗"),
         ("Git", Installer.version_of("git") or ("will be downloaded" if SYSTEM == "Windows" else "missing — needed")),
-        ("Pandoc", Installer.version_of("pandoc") or "will be downloaded"),
+        ("Pandoc", pandoc_status()),
         ("LaTeX (PDF)", "found" if shutil.which("lualatex") else "can be downloaded (optional)"),
         ("Node.js", "not needed" if (SOURCE / "frontend" / "dist" / "index.html").exists()
          else (Installer.version_of("node") or "a temporary copy will be downloaded")),

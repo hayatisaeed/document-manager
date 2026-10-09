@@ -21,8 +21,6 @@ if [ -d /ssh ]; then
   chmod 600 /root/.ssh/* 2>/dev/null || true
 fi
 
-exec gunicorn config.wsgi:application \
-  --bind 0.0.0.0:8000 \
-  --workers 2 --threads 4 \
-  --timeout 600 \
-  --access-logfile -
+# A single process (with threads): Jupyter kernels for notebooks live in it.
+exec waitress-serve --listen=0.0.0.0:8000 --threads=8 --channel-timeout=3600 \
+  config.wsgi:application

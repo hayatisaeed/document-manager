@@ -3,8 +3,10 @@ services:
     build:
       context: .
       args:
-        # Set to "false" for a much smaller image without PDF export (~400 MB instead of ~1.5 GB).
+        # Set to "false" for a much smaller image without PDF export.
         INSTALL_LATEX: "true"
+        # numpy, pandas, matplotlib and scipy for running notebooks.
+        INSTALL_SCIENCE: "true"
     image: document-manager
     container_name: document-manager
     restart: unless-stopped

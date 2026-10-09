@@ -11,12 +11,13 @@ FROM python:3.12-slim-bookworm
 
 ARG PANDOC_VERSION=3.6.4
 ARG INSTALL_LATEX=true
+ARG INSTALL_SCIENCE=true
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl \
  && if [ "$INSTALL_LATEX" = "true" ]; then \
-      apt-get install -y --no-install-recommends texlive-xetex texlive-latex-recommended \
-        texlive-fonts-recommended texlive-latex-extra lmodern fonts-dejavu fonts-noto-core; \
+      apt-get install -y --no-install-recommends texlive-luatex texlive-xetex texlive-latex-recommended \
+        texlive-fonts-recommended texlive-latex-extra texlive-pictures texlive-lang-arabic lmodern; \
     fi \
  && ARCH="$(dpkg --print-architecture)" \
  && curl -fsSL -o /tmp/pandoc.deb \
@@ -25,8 +26,9 @@ RUN apt-get update \
  && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/backend
-COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/requirements.txt backend/requirements-science.txt ./
+RUN pip install --no-cache-dir -r requirements.txt \
+ && if [ "$INSTALL_SCIENCE" = "true" ]; then pip install --no-cache-dir -r requirements-science.txt; fi
 COPY backend/ ./
 COPY --from=frontend /app/frontend/dist /app/frontend/dist
 COPY docker/entrypoint.sh /entrypoint.sh
