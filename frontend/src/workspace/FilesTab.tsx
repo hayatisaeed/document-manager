@@ -3,7 +3,7 @@ import { api } from "../api";
 import Modal from "../components/Modal";
 import { toast, toastError } from "../components/Toast";
 import type { TreeItem } from "../types";
-import { basename, dirname } from "../util";
+import { basename, dirname, fileIcon } from "../util";
 import { useWorkspace } from "./context";
 import { t } from "../i18n";
 
@@ -154,16 +154,16 @@ export default function FilesTab() {
   );
 }
 
-function fileIcon(item: TreeItem) {
-  if (item.format === "markdown") return "M";
-  if (item.format === "latex") return "T";
-  if (item.format === "html") return "R";
-  if (item.format === "ipynb") return "J";
-  if (/\.(png|jpe?g|gif|webp|svg)$/i.test(item.path)) return "▣";
-  if (/\.pdf$/i.test(item.path)) return "P";
-  if (/\.bib$/i.test(item.path)) return "B";
-  return "·";
-}
+const NEW_TYPES = [
+  [".md", "Markdown"],
+  [".html", "Rich text"],
+  [".tex", "LaTeX"],
+  [".ipynb", "Notebook"],
+  [".excalidraw", "Drawing"],
+  [".xlsx", "Excel spreadsheet"],
+  [".csv", "CSV table"],
+] as const;
+// i18n: Markdown|Rich text|LaTeX|Notebook|Drawing|Excel spreadsheet|CSV table
 
 function NewDialog({ kind, dir, onClose }: { kind: "file" | "dir"; dir: string; onClose: () => void }) {
   const { p, refresh, openFile } = useWorkspace();
@@ -186,9 +186,23 @@ function NewDialog({ kind, dir, onClose }: { kind: "file" | "dir"; dir: string; 
           {t("Path")}
           <input autoFocus dir="auto" value={path} onChange={(e) => setPath(e.target.value)} placeholder={kind === "file" ? "notes/interview-1.md" : "notes/interviews"} />
           {kind === "file" && (
-            <small className="muted">{t("Use .md for Markdown, .tex for LaTeX, .html for rich text, .ipynb for a Jupyter notebook, or .txt.")}</small>
+            <small className="muted">{t("Use .md for Markdown, .tex for LaTeX, .html for rich text, .ipynb for a Jupyter notebook, .excalidraw for a drawing, .xlsx or .csv for a spreadsheet, or .txt.")}</small>
           )}
         </label>
+        {kind === "file" && (
+          <div className="row tight">
+            {NEW_TYPES.map(([ext, label]) => (
+              <button
+                key={ext}
+                type="button"
+                className={`choice ${path.toLowerCase().endsWith(ext) ? "active" : ""}`}
+                onClick={() => setPath((v) => (/\.[^./]+$/.test(v) ? v.replace(/\.[^./]+$/, ext) : (v.endsWith("/") || !v ? v + "untitled" : v) + ext))}
+              >
+                {t(label)}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="row end">
           <button type="button" className="btn" onClick={onClose}>
             {t("Cancel")}

@@ -13,6 +13,8 @@ import SyncPanel from "../workspace/SyncPanel";
 import ExportPanel from "../workspace/ExportPanel";
 import ProjectPanel from "../workspace/ProjectPanel";
 import ConflictPanel from "../workspace/ConflictPanel";
+import GraphPanel from "../workspace/GraphPanel";
+import TreePanel from "../workspace/TreePanel";
 import PrefsToggles from "../components/PrefsToggles";
 import { t } from "../i18n";
 import { fmtNum } from "../prefs";
@@ -139,6 +141,12 @@ export default function Workspace() {
             <button className={is("history")} onClick={() => setView({ name: "history" })}>
               {t("History")}
             </button>
+            <button className={is("tree")} onClick={() => setView({ name: "tree" })} title={t("All branches and commits as a tree")}>
+              {t("Tree")}
+            </button>
+            <button className={is("graph")} onClick={() => setView({ name: "graph" })} title={t("How your documents link to each other")}>
+              {t("Graph")}
+            </button>
             <button className={is("branches")} onClick={() => setView({ name: "branches" })}>
               {t("Branches")}
             </button>
@@ -198,6 +206,10 @@ function MainView({ view, reloadKey }: { view: View; reloadKey: number }) {
       return <ProjectPanel />;
     case "conflict":
       return <ConflictPanel key={view.path} path={view.path} />;
+    case "graph":
+      return <GraphPanel />;
+    case "tree":
+      return <TreePanel />;
     default:
       return (
         <div className="empty">

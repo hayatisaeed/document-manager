@@ -8,9 +8,9 @@ from rest_framework.decorators import api_view, parser_classes
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
-from core.services import bib, pandoc
+from core.services import bib, comments, links, pandoc, sheets
 from core.services import project_files as pf
-from core.services.paths import PathError, doc_format, safe_path
+from core.services.paths import PathError, doc_format, file_kind, safe_path
 
 from .common import get_project, require
 
@@ -39,10 +39,14 @@ def file_detail(request, slug):
         title = request.data.get("title") or re.sub(r"^\d+[-_ ]*", "", target.stem).replace("-", " ").replace(
             "_", " ").strip().title() or target.stem
         fmt = doc_format(path)
+        kind = file_kind(path)
         content = request.data.get("content")
-        if content is None:
-            content = pf.starter_content(fmt, title) if fmt else ""
-        pf.write_text(root, path, content)
+        if kind == "sheet" and sheets.is_excel(path):
+            sheets.create_excel(target)
+        else:
+            if content is None:
+                content = pf.starter_content(fmt or kind or "", title) if (fmt or kind == "drawing") else ""
+            pf.write_text(root, path, content)
         manifest = pf.read_manifest(root)
         manifest["files"][path] = {"title": title, "status": "draft" if fmt else "idea",
                                    "tags": request.data.get("tags") or [], "target_words": 0}
@@ -205,3 +209,89 @@ def font(request, name):
     response["Access-Control-Allow-Origin"] = "*"
     response["Cache-Control"] = "max-age=86400"
     return response
+
+
+# ---------------------------------------------------------------- spreadsheets
+
+@api_view(["GET", "PUT"])
+def sheet(request, slug):
+    """GET/PUT ?path=... a CSV/TSV or Excel file as a grid of strings."""
+    project = get_project(slug)
+    path = request.query_params.get("path")
+    target = safe_path(project.path, path)
+    if file_kind(path) != "sheet":
+        raise PathError(f"{path} is not a spreadsheet")
+    if request.method == "PUT":
+        data = sheets.read(target) if target.exists() else None
+        if data and data["truncated"]:
+            raise PathError("This file is too large to edit in the app.")
+        sheets.write(target, request.data.get("sheets") or [], request.data.get("delimiter"))
+    return Response(sheets.read(target))
+
+
+# ---------------------------------------------------------------- links & graph
+
+@api_view(["GET"])
+def graph(request, slug):
+    return Response(links.graph(get_project(slug).path))
+
+
+@api_view(["GET", "POST", "DELETE"])
+def file_links(request, slug):
+    """GET ?path=... links from and to a file. POST/DELETE {from, to} add or remove a manual link."""
+    project = get_project(slug)
+    root = project.path
+    if request.method == "GET":
+        path = request.query_params.get("path")
+        safe_path(root, path)
+        return Response(links.for_file(root, path))
+    data = request.data or request.query_params  # DELETE may send its fields in the query string
+    source, target = require(data, "from", "to")
+    safe_path(root, source)
+    if not safe_path(root, target).exists():
+        raise FileNotFoundError(target)
+    if source == target:
+        raise PathError("A file can't link to itself.")
+    manifest = links.set_manual(root, source, target, request.method == "POST")
+    return Response({"manifest": manifest, **links.for_file(root, source)})
+
+
+# ---------------------------------------------------------------- comments
+
+@api_view(["GET", "POST"])
+def comment_list(request, slug):
+    """GET ?path=... threads on a file (or, without a path, open-thread counts per file).
+    POST {path, anchor, text} starts a thread."""
+    project = get_project(slug)
+    root = project.path
+    if request.method == "POST":
+        path, text = require(request.data, "path", "text")
+        thread = comments.add_thread(root, path, request.data.get("anchor"), text)
+        return Response(thread, status=201)
+    path = request.query_params.get("path")
+    if not path:
+        return Response(comments.counts(root))
+    safe_path(root, path)
+    return Response(comments.load(root, path))
+
+
+@api_view(["POST", "PATCH", "DELETE"])
+def comment_detail(request, slug, thread_id):
+    """POST {path, text} replies. PATCH {path, resolved?, anchor?, comment_id?, text?} updates.
+    DELETE ?path=...&comment_id=... deletes the thread or one reply."""
+    project = get_project(slug)
+    root = project.path
+    if request.method == "DELETE":
+        path = request.query_params.get("path")
+        safe_path(root, path)
+        comments.delete(root, path, thread_id, request.query_params.get("comment_id") or None)
+        return Response(status=204)
+    (path,) = require(request.data, "path")
+    safe_path(root, path)
+    if request.method == "POST":
+        return Response(comments.reply(root, path, thread_id, request.data.get("text")), status=201)
+    if request.data.get("comment_id"):
+        return Response(comments.edit_comment(root, path, thread_id, request.data["comment_id"],
+                                              request.data.get("text")))
+    return Response(comments.update_thread(root, path, thread_id, resolved=request.data.get("resolved"),
+                                           anchor=request.data.get("anchor")))

@@ -5,6 +5,8 @@ export interface FileMeta {
   status?: string;
   tags?: string[];
   target_words?: number;
+  /** Manual links to other files, added in the Links panel. */
+  links?: string[];
 }
 
 export interface Manifest {
@@ -40,6 +42,8 @@ export interface TreeItem {
   type: "file" | "dir";
   size?: number;
   format?: DocFormat | null;
+  /** Files with their own editor: Excalidraw drawings and spreadsheets. */
+  kind?: "drawing" | "sheet" | null;
   text?: boolean;
 }
 
@@ -253,4 +257,82 @@ export interface ProjectEnv {
   missing: boolean;
   default: PyEnv;
   files: { requirements: boolean; environment: boolean };
+}
+
+export interface SheetData {
+  name: string;
+  /** Name in the file when loaded; lets the server rename sheets instead of recreating them. */
+  orig?: string;
+  /** Cells as typed: "=SUM(A1:A3)" for formulas, "'007" for text that looks like a number. */
+  cells: string[][];
+  /** Values Excel saved for formula cells, keyed "row:col" (0-based). */
+  values: Record<string, string>;
+}
+
+export interface Workbook {
+  format: "csv" | "xlsx";
+  delimiter: string | null;
+  truncated: boolean;
+  sheets: SheetData[];
+}
+
+export interface GraphNode {
+  path: string;
+  title: string;
+  format: DocFormat | null;
+  kind: "drawing" | "sheet" | null;
+  tags: string[];
+  status: string | null;
+  manuscript: boolean;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  kinds: ("inline" | "manual")[];
+}
+
+export interface LinkGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface FileLink {
+  path: string;
+  title: string;
+  kinds: ("inline" | "manual")[];
+}
+
+export interface FileLinks {
+  outgoing: FileLink[];
+  incoming: FileLink[];
+}
+
+export type CommentAnchor =
+  | { type: "text"; quote: string; prefix: string; suffix: string }
+  | { type: "cell"; sheet: string; cell: string };
+
+export interface CommentItem {
+  id: string;
+  author: string;
+  date: string;
+  text: string;
+  edited?: string;
+}
+
+export interface CommentThread {
+  id: string;
+  anchor: CommentAnchor;
+  resolved: boolean;
+  comments: CommentItem[];
+}
+
+export interface GraphCommit {
+  sha: string;
+  short: string;
+  author: string;
+  date: string;
+  parents: string[];
+  refs: { name: string; type: "head" | "branch" | "remote" | "tag" | "stash" }[];
+  subject: string;
 }
