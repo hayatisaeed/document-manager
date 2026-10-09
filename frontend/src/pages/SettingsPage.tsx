@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api } from "../api";
+import PackageSources from "../components/PackageSources";
 import { savePrefs } from "../components/PrefsToggles";
 import { toast, toastError } from "../components/Toast";
 import { t } from "../i18n";
@@ -14,6 +15,7 @@ export default function SettingsPage() {
   const [host, setHost] = useState("github.com");
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
+  const { hash } = useLocation();
 
   useEffect(() => {
     api.get<AppSettings>("/api/settings/").then(setSettings).catch(toastError);
@@ -46,6 +48,11 @@ export default function SettingsPage() {
     await api.del(`/api/credentials/${id}/`).catch(toastError);
     setCreds((c) => c.filter((x) => x.id !== id));
   };
+
+  // Links such as /settings#package-sources jump to their section once it is shown.
+  useEffect(() => {
+    if (settings && hash) document.getElementById(hash.slice(1))?.scrollIntoView();
+  }, [settings, hash]);
 
   if (!settings) return <div className="page muted">{t("Loading…")}</div>;
   const caps = settings.capabilities;
@@ -160,6 +167,11 @@ export default function SettingsPage() {
         </form>
       </section>
 
+      <section className="section" id="package-sources">
+        <h2>{t("Package sources and mirrors")}</h2>
+        <PackageSources />
+      </section>
+
       <section className="section">
         <h2>{t("System")}</h2>
         <ul className="plain-list">
@@ -172,7 +184,7 @@ export default function SettingsPage() {
             {t("PDF engines")}: {caps.pdf_engines.length ? <span dir="ltr">{caps.pdf_engines.join(", ")}</span> : t("none (PDF export unavailable)")}
           </li>
           <li>
-            {t("Jupyter (run notebook cells)")}: {ok(caps.jupyter)}
+            {t("Jupyter (run notebook cells)")}: {ok(caps.jupyter)} · <Link to="/environments">{t("Python environments")}</Link>
           </li>
           <li>
             {t("Projects directory")}:{" "}

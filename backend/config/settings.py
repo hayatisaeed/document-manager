@@ -12,6 +12,11 @@ DATA_DIR = Path(os.environ.get("DM_DATA_DIR", BASE_DIR.parent / "data")).resolve
 PROJECTS_DIR = DATA_DIR / "projects"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+# Python environments (venv / conda) that the app creates. The installer points this
+# at its own folder so environments are not synced with Documents.
+ENVS_DIR = Path(os.environ.get("DM_ENVS_DIR", DATA_DIR / "envs")).resolve()
+# Package sources used until the user changes them in Settings (JSON, set by the installer).
+PACKAGE_DEFAULTS = os.environ.get("DM_PACKAGE_DEFAULTS", "")
 
 # Fonts used for Persian text in PDF/HTML exports (Vazirmatn, SIL OFL).
 FONTS_DIR = Path(os.environ.get("DM_FONTS_DIR", BASE_DIR / "core" / "fonts"))

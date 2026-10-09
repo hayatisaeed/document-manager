@@ -41,6 +41,9 @@ export default function ProjectsPage() {
         </div>
         <div className="row">
           <PrefsToggles />
+          <Link className="btn" to="/environments">
+            {t("Python environments")}
+          </Link>
           <Link className="btn" to="/settings">
             {t("Settings")}
           </Link>

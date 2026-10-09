@@ -1,18 +1,21 @@
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Machine-readable error details from the server, e.g. {code: "missing_ipykernel", env: "…"}. */
+  data: Record<string, unknown>;
+  constructor(message: string, status: number, data: Record<string, unknown> = {}) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
-async function errorMessage(res: Response): Promise<string> {
+async function apiError(res: Response): Promise<ApiError> {
   try {
     const data = await res.json();
-    if (typeof data?.detail === "string") return data.detail;
-    return JSON.stringify(data);
+    if (typeof data?.detail === "string") return new ApiError(data.detail, res.status, data);
+    return new ApiError(JSON.stringify(data), res.status);
   } catch {
-    return `${res.status} ${res.statusText}`;
+    return new ApiError(`${res.status} ${res.statusText}`, res.status);
   }
 }
 
@@ -29,7 +32,7 @@ export async function request<T = unknown>(
     init.body = JSON.stringify(body);
   }
   const res = await fetch(url, init);
-  if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+  if (!res.ok) throw await apiError(res);
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
@@ -61,7 +64,7 @@ export async function download(url: string, body: unknown, fallbackName: string)
     headers: { "Content-Type": "application/json", "X-DM-Client": "1" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+  if (!res.ok) throw await apiError(res);
   const blob = await res.blob();
   const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "");
   const a = document.createElement("a");

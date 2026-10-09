@@ -15,6 +15,8 @@ names the request it captures) go only to the event log, not to the cell.
 """
 import atexit
 import base64
+import os
+import sys
 import threading
 import time
 from collections import deque
@@ -22,10 +24,34 @@ from pathlib import Path
 
 try:
     from jupyter_client import KernelManager
-    from jupyter_client.kernelspec import KernelSpecManager
+    from jupyter_client.kernelspec import KernelSpec, KernelSpecManager, NoSuchKernel
 except ImportError:  # pragma: no cover - optional dependency
     KernelManager = None
     KernelSpecManager = None
+
+from . import envs, packaging
+
+if KernelSpecManager is not None:
+    class EnvKernelSpecManager(KernelSpecManager):
+        """Installed Jupyter kernels plus a Python kernel for an environment (``dm-env-<id>``).
+
+        Environment kernels need no kernel.json: they run ``python -m ipykernel_launcher``
+        from the environment, so any conda env or venv with ipykernel works. The spec is
+        resolved before launching (jupyter_client asks for it from inside its event loop,
+        where the database cannot be used).
+        """
+
+        def __init__(self, env: dict | None = None, **kwargs):
+            super().__init__(**kwargs)
+            self._env = env
+
+        def get_kernel_spec(self, kernel_name):
+            if self._env and kernel_name == self._env["kernel"]:
+                return KernelSpec(argv=[self._env["python"], "-m", "ipykernel_launcher", "-f", "{connection_file}"],
+                                  display_name=self._env["name"], language="python", resource_dir="")
+            if kernel_name.startswith(envs.KERNEL_PREFIX):
+                raise NoSuchKernel(kernel_name)
+            return super().get_kernel_spec(kernel_name)
 
 OUTPUT_TYPES = {"stream", "display_data", "execute_result", "error", "clear_output", "update_display_data"}
 # "status" lets widgets know when the kernel has processed their messages.
@@ -34,7 +60,10 @@ MAX_EVENTS = 5000
 
 
 class KernelError(Exception):
-    pass
+    def __init__(self, message: str, code: str = "", **extra):
+        super().__init__(message)
+        self.code = code
+        self.extra = extra
 
 
 def _encode_buffers(buffers) -> list[str]:
@@ -197,10 +226,13 @@ def available() -> bool:
 
 
 def specs() -> list[dict]:
+    """Installed Jupyter kernels other than the default Python one (environments replace it)."""
     if KernelSpecManager is None:
         return []
     result = []
     for name, info in KernelSpecManager().get_all_specs().items():
+        if name == "python3":
+            continue
         spec = info.get("spec", {})
         result.append({"name": name, "display_name": spec.get("display_name", name),
                        "language": spec.get("language", "")})
@@ -226,21 +258,42 @@ def status(slug: str, path: str) -> dict:
     return {"running": True, "busy": session.busy, "kernel": session.name, "session": id(session)}
 
 
+def in_use(kernel_name: str) -> bool:
+    return any(s.name == kernel_name and s.km.is_alive() for s in _sessions.values())
+
+
+def _launch(name: str) -> tuple[dict | None, dict]:
+    """Check the kernel can start; return its environment (if any) and process variables."""
+    extra = packaging.command_env()
+    env = envs.env_by_kernel(name)
+    if env:
+        if not env["has_ipykernel"]:
+            raise KernelError(f"The environment “{env['name']}” does not have ipykernel, which notebooks need. "
+                              "Install it from Python environments.", code="missing_ipykernel", env=env["id"])
+        return env, envs.activation_env(Path(env["path"]), extra)
+    names = KernelSpecManager().find_kernel_specs()
+    if name not in names:
+        if name.startswith(envs.KERNEL_PREFIX):
+            raise KernelError("This notebook's environment no longer exists. Choose another one.")
+        raise KernelError(f"The Jupyter kernel “{name}” is not installed.")
+    return None, {**os.environ, **extra}
+
+
 def start(slug: str, root: Path, path: str, kernel_name: str | None = None) -> dict:
+    """Start (or switch) the notebook's kernel. ``kernel_name`` defaults to the app's environment."""
     _require()
     key = (slug, path)
+    name = kernel_name or envs.kernel_name(sys.prefix)
     with _registry_lock:
         session = _sessions.get(key)
-        if session and session.km.is_alive() and (not kernel_name or kernel_name == session.name):
+        if session and session.km.is_alive() and name == session.name:
             return status(slug, path)
+        python_env, variables = _launch(name)
         if session:
             session.stop()
-        names = KernelSpecManager().find_kernel_specs()
-        name = kernel_name if kernel_name in names else ("python3" if "python3" in names else next(iter(names), None))
-        if not name:
-            raise KernelError("No Jupyter kernels found. Install one with `pip install ipykernel`.")
-        km = KernelManager(kernel_name=name)
-        km.start_kernel(cwd=str((root / path).parent))
+            _sessions.pop(key, None)
+        km = KernelManager(kernel_name=name, kernel_spec_manager=EnvKernelSpecManager(env=python_env))
+        km.start_kernel(cwd=str((root / path).parent), env=variables)
         kc = km.client()
         kc.start_channels()
         try:
@@ -270,10 +323,10 @@ def _to_output(kind: str, content: dict, outputs: list[dict]) -> None:
         outputs.clear()
 
 
-def execute(slug: str, root: Path, path: str, code: str, timeout: int = 3600) -> dict:
+def execute(slug: str, root: Path, path: str, code: str, timeout: int = 3600, kernel_name: str | None = None) -> dict:
     session = _session(slug, path)
     if not session:
-        start(slug, root, path)
+        start(slug, root, path, kernel_name)
         session = _sessions[(slug, path)]
     return session.execute(code, timeout)
 
@@ -304,9 +357,11 @@ def interrupt(slug: str, path: str) -> None:
         session.km.interrupt_kernel()
 
 
-def restart(slug: str, root: Path, path: str) -> dict:
+def restart(slug: str, root: Path, path: str, kernel_name: str | None = None) -> dict:
+    session = _sessions.get((slug, path))
+    name = session.name if session else kernel_name
     shutdown(slug, path)
-    return start(slug, root, path)
+    return start(slug, root, path, name)
 
 
 def shutdown(slug: str, path: str) -> None:

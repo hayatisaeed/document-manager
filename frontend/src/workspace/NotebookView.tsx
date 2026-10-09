@@ -2,12 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import SandboxedOutput, { htmlDoc, needsScripts, plotlyDoc, vegaDoc } from "../components/SandboxedOutput";
 import type { WidgetBridge } from "../components/widgets";
 import { api, ApiError, qs } from "../api";
+import JobLog from "../components/JobLog";
+import { Link } from "react-router-dom";
 import CodeEditor from "../editors/CodeEditor";
 import { ansiToHtml, joinText, renderMarkdown, sanitize } from "../components/notebookRender";
 import { toast, toastError } from "../components/Toast";
 import { t } from "../i18n";
 import { fmtNum, usePrefs } from "../prefs";
-import type { Notebook, NotebookCell, NotebookOutput } from "../types";
+import type { Job, Notebook, NotebookCell, NotebookOutput } from "../types";
 import { basename } from "../util";
 import { useWorkspace } from "./context";
 
@@ -16,10 +18,21 @@ interface KernelSpec {
   display_name: string;
   language: string;
 }
+interface EnvKernel {
+  kernel: string;
+  id: string;
+  name: string;
+  kind: "venv" | "conda";
+  python_version: string;
+  has_ipykernel: boolean;
+}
 interface KernelStatus {
   running: boolean;
   busy: boolean;
   kernel: string | null;
+  /** The kernel this notebook uses, and why: its own choice, the project's environment, or the app's. */
+  selected?: string;
+  selected_source?: "notebook" | "project" | "app";
 }
 interface ExecResult {
   outputs: NotebookOutput[];
@@ -51,6 +64,11 @@ export default function NotebookView({ path }: { path: string }) {
   const [running, setRunning] = useState<Set<string>>(new Set());
   const [queue, setQueue] = useState(false);
   const [specs, setSpecs] = useState<KernelSpec[] | null>(null);
+  const [envs, setEnvs] = useState<EnvKernel[]>([]);
+  // Set when the chosen environment lacks ipykernel; offers to install it.
+  const [missing, setMissing] = useState<EnvKernel | null>(null);
+  const [fixJob, setFixJob] = useState<Job | null>(null);
+  const [fixRunning, setFixRunning] = useState(false);
   const [kernel, setKernel] = useState<KernelStatus>({ running: false, busy: false, kernel: null });
   const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +108,13 @@ export default function NotebookView({ path }: { path: string }) {
         setEditing(new Set(cs.filter((c) => c.cell_type === "markdown" && !joinText(c.source).trim()).map((c) => c.key)));
       })
       .catch((e) => setError(e instanceof ApiError && e.status === 404 ? t("File not found") : e.message));
-    api.get<{ available: boolean; specs: KernelSpec[] }>("/api/kernels/").then((r) => setSpecs(r.specs)).catch(() => setSpecs([]));
+    api
+      .get<{ available: boolean; specs: KernelSpec[]; envs: EnvKernel[] }>("/api/kernels/")
+      .then((r) => {
+        setSpecs(r.specs);
+        setEnvs(r.envs);
+      })
+      .catch(() => setSpecs([]));
     api.get<KernelStatus>(p("kernel/status/") + qs({ path })).then(setKernel).catch(() => {});
   }, [p, path]);
 
@@ -211,7 +235,7 @@ export default function NotebookView({ path }: { path: string }) {
         touch();
         return res.status === "ok";
       } catch (e) {
-        toastError(e);
+        if (!showMissing(e)) toastError(e);
         return false;
       } finally {
         setRunning((r) => {
@@ -222,6 +246,7 @@ export default function NotebookView({ path }: { path: string }) {
         api.get<KernelStatus>(p("kernel/status/") + qs({ path })).then(setKernel).catch(() => {});
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [p, path, touch],
   );
 
@@ -248,12 +273,32 @@ export default function NotebookView({ path }: { path: string }) {
     setQueue(false);
   };
 
+  /** Show the "install ipykernel" banner for that error; false for other errors. */
+  function showMissing(e: unknown): boolean {
+    if (!(e instanceof ApiError) || e.data.code !== "missing_ipykernel") return false;
+    setMissing(envs.find((x) => x.id === e.data.env) ?? { kernel: "", id: String(e.data.env), name: "", kind: "venv", python_version: "", has_ipykernel: false });
+    return true;
+  }
+
   const kernelCall = async (action: "start" | "interrupt" | "restart" | "shutdown", body: Record<string, unknown> = {}) => {
     if (action === "interrupt") stopAll.current = true;
     try {
+      setMissing(null);
       setKernel(await api.post<KernelStatus>(p(`kernel/${action}/`), { path, ...body }));
       if (action === "restart") toast(t("Kernel restarted"), "success");
     } catch (e) {
+      if (!showMissing(e)) toastError(e);
+      api.get<KernelStatus>(p("kernel/status/") + qs({ path })).then(setKernel).catch(() => {});
+    }
+  };
+
+  const installIpykernel = async () => {
+    if (!missing) return;
+    try {
+      setFixRunning(true);
+      setFixJob(await api.post<Job>(`/api/envs/${missing.id}/packages/`, { action: "install", packages: ["ipykernel"], manager: missing.kind === "conda" ? "conda" : "pip" }));
+    } catch (e) {
+      setFixRunning(false);
       toastError(e);
     }
   };
@@ -266,7 +311,9 @@ export default function NotebookView({ path }: { path: string }) {
   // ------------------------------------------------------------ render
   const meta = manifest.files[path] ?? {};
   const changed = status?.files.some((f) => f.path === path);
-  const preferredKernel = (nb?.metadata?.kernelspec as { name?: string } | undefined)?.name;
+  const effective = kernel.running ? kernel.kernel : kernel.selected;
+  const effectiveEnv = envs.find((e) => e.kernel === effective);
+  const effectiveName = effectiveEnv?.name ?? specs?.find((s) => s.name === effective)?.display_name ?? "";
 
   if (error) {
     return (
@@ -313,23 +360,43 @@ export default function NotebookView({ path }: { path: string }) {
         <span className="small muted">
           {kernel.busy || running.size ? t("Kernel busy") : kernel.running ? t("Kernel idle") : t("No kernel")}
         </span>
-        {specs && specs.length > 0 ? (
+        {specs && (envs.length > 0 || specs.length > 0) ? (
           <select
             className="tb-select"
-            value={kernel.kernel ?? preferredKernel ?? specs[0].name}
+            value={kernel.selected_source === "notebook" ? (kernel.selected ?? "") : ""}
             onChange={(e) => kernelCall("start", { kernel: e.target.value })}
-            aria-label={t("Kernel")}
-            dir="ltr"
+            aria-label={t("Python environment")}
+            title={t("Python environment")}
           >
-            {specs.map((s) => (
-              <option key={s.name} value={s.name}>
-                {s.display_name}
-              </option>
-            ))}
+            <option value="">
+              {kernel.selected_source === "project" ? t("Project environment") : t("Default environment")}
+              {kernel.selected_source !== "notebook" && effectiveName ? ` (${effectiveName})` : ""}
+            </option>
+            <optgroup label={t("Python environments")}>
+              {envs.map((e) => (
+                <option key={e.kernel} value={e.kernel}>
+                  {e.name} · {e.kind}
+                  {e.python_version ? ` · ${e.python_version}` : ""}
+                  {e.has_ipykernel ? "" : ` · ${t("no ipykernel")}`}
+                </option>
+              ))}
+            </optgroup>
+            {specs.length > 0 && (
+              <optgroup label={t("Other Jupyter kernels")}>
+                {specs.map((s) => (
+                  <option key={s.name} value={s.name}>
+                    {s.display_name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         ) : (
           specs && <span className="small error-text">{t("Jupyter is not installed, so cells cannot run.")}</span>
         )}
+        <Link className="tb" to="/environments" title={t("Manage environments and packages")}>
+          {t("Packages…")}
+        </Link>
         <span className="tb-sep" />
         <button className="tb" onClick={() => runAndAdvance(selected)} title={t("Run cell (Shift+Enter)")}>
           ▶ {t("Run")}
@@ -359,6 +426,44 @@ export default function NotebookView({ path }: { path: string }) {
           + {t("Text")}
         </button>
       </div>
+
+      {missing && (
+        <div className="banner banner-warn">
+          <span>
+            {t("The environment “{name}” does not have ipykernel, which notebooks need.", { name: missing.name || missing.id })}
+          </span>
+          {!fixRunning && (
+            <span className="row tight">
+              <button className="btn btn-sm btn-primary" onClick={installIpykernel}>
+                {t("Install ipykernel")}
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  setFixJob(null);
+                  kernelCall("start", { kernel: "" });
+                }}
+              >
+                {t("Use the default environment")}
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+      {fixJob && (
+        <JobLog
+          job={fixJob}
+          compact
+          onDone={(j) => {
+            setFixRunning(false);
+            if (j.state !== "succeeded") return; // keep the output visible
+            setFixJob(null);
+            setMissing(null);
+            api.get<{ envs: EnvKernel[] }>("/api/kernels/").then((r) => setEnvs(r.envs)).catch(() => {});
+            toast(t("ipykernel installed. You can run cells now."), "success");
+          }}
+        />
+      )}
 
       <WidgetContext.Provider value={bridge}>
       <div className="nb-cells">
