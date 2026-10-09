@@ -502,3 +502,32 @@ td .progress { margin: 0; }
   .nb-cell { grid-template-columns: 40px 1fr; }
   .nb-actions { grid-column: 2; flex-direction: row; visibility: visible; }
 }
+
+/* Python environments */
+.job { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.job-failed { border-color: var(--danger); }
+.job-output { max-height: 280px; overflow: auto; }
+.job-state-succeeded { background: var(--add-bg); }
+.job-state-failed { background: var(--del-bg); }
+.env-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+.env-list { display: flex; flex-direction: column; gap: 4px; position: sticky; top: 12px; }
+.env-group { margin: 10px 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.env-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; text-align: start; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.env-item.active { border-color: var(--accent); background: var(--accent-soft); }
+.env-item small { color: var(--muted); }
+.env-detail .section { margin-top: 0; margin-bottom: 16px; }
+.env-path { font: 12px var(--mono); color: var(--muted); word-break: break-all; }
+.pkg-filter { max-width: 260px; }
+.table td.pkg-version { font: 12px var(--mono); }
+.source-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+.source-result { font-size: 12px; white-space: nowrap; }
+.source-result.ok { color: #2e9d5c; }
+.preset-table td { padding: 5px 8px; }
+.preset-table tr.current td { background: var(--accent-soft); }
+@media (max-width: 800px) {
+  .env-layout { grid-template-columns: 1fr; }
+  .env-list { position: static; }
+}
+.env-list .env-item { width: 100%; margin-bottom: 4px; }
+.form label.choice { flex-direction: row; font-weight: normal; }
+.preset-table label { flex-direction: row; flex-wrap: nowrap; align-items: center; font-weight: normal; }

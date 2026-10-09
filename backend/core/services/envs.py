@@ -343,16 +343,18 @@ def list_packages(env: dict) -> list[dict]:
             env=activation_env(prefix, packaging.command_env()))}
     except EnvError:
         top = set()
-    packages = {i["name"].lower(): {"name": i["name"], "version": i["version"], "manager": "pip",
-                                    "top_level": i["name"].lower() in top} for i in pip_items}
+    key = packaging._normalize_name  # conda and pip spell some names differently (prompt_toolkit / prompt-toolkit)
+    top = {key(n) for n in top}
+    packages = {key(i["name"]): {"name": i["name"], "version": i["version"], "manager": "pip",
+                                 "top_level": key(i["name"]) in top} for i in pip_items}
     if env["kind"] == "conda" and conda_info():
         for item in _run_json([conda_info()["exe"], "list", "-p", prefix, "--json"]):
             if item.get("channel") == "pypi":
                 continue  # installed by pip; already in the pip list
             name = item["name"]
-            entry = packages.get(name.lower(), {"name": name, "top_level": name.lower() in top})
+            entry = packages.get(key(name), {"name": name, "top_level": key(name) in top})
             entry.update(version=item["version"], manager="conda", channel=item.get("channel", ""))
-            packages[name.lower()] = entry
+            packages[key(name)] = entry
     return sorted(packages.values(), key=lambda p: p["name"].lower())
 
 

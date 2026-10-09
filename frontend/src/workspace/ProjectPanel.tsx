@@ -7,6 +7,7 @@ import { fmtNum } from "../prefs";
 import type { Stats } from "../types";
 import { basename } from "../util";
 import { useWorkspace } from "./context";
+import ProjectEnvSection from "./ProjectEnvSection";
 
 export default function ProjectPanel() {
   const { p, manifest, refresh, slug, setView } = useWorkspace();
@@ -139,6 +140,8 @@ export default function ProjectPanel() {
           </table>
         </>
       )}
+
+      <ProjectEnvSection />
 
       <h3>{t("Danger zone")}</h3>
       <p className="muted small">

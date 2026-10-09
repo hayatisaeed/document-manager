@@ -175,3 +175,82 @@ export interface Notebook {
   nbformat: number;
   nbformat_minor: number;
 }
+
+export interface PyEnv {
+  id: string;
+  kernel: string;
+  name: string;
+  kind: "venv" | "conda";
+  path: string;
+  python: string;
+  python_version: string;
+  has_ipykernel: boolean;
+  source: "app" | "conda" | "added" | "found";
+  is_app: boolean;
+  is_conda_base: boolean;
+  created_by_app: boolean;
+  in_use?: boolean;
+}
+
+export interface CondaInfo {
+  exe: string;
+  version: string;
+  mamba: boolean;
+  root_prefix: string;
+}
+
+export interface EnvList {
+  envs: PyEnv[];
+  conda: CondaInfo | null;
+  conda_path: string;
+  envs_dir: string;
+}
+
+export interface PyPackage {
+  name: string;
+  version: string;
+  manager: "pip" | "conda";
+  top_level: boolean;
+  channel?: string;
+}
+
+export interface Job {
+  id: string;
+  title: string;
+  state: "running" | "succeeded" | "failed" | "cancelled";
+  error: string;
+  next?: number;
+  lines?: string[];
+}
+
+export interface PackageConfig {
+  pip_index_url: string;
+  pip_extra_index_urls: string[];
+  pip_trusted_hosts: string[];
+  conda_channels: string[];
+  use_mamba: boolean;
+  http_proxy: string;
+  https_proxy: string;
+  no_proxy: string;
+}
+
+export interface SourcePreset {
+  id: string;
+  name: string;
+  region: "official" | "iran" | "china";
+  url: string;
+}
+
+export interface PackageSources {
+  config: PackageConfig;
+  conda_path: string;
+  presets: { pip: SourcePreset[]; conda: SourcePreset[] };
+}
+
+export interface ProjectEnv {
+  env: PyEnv | null;
+  env_path: string;
+  missing: boolean;
+  default: PyEnv;
+  files: { requirements: boolean; environment: boolean };
+}
