@@ -31,7 +31,7 @@ def rel_path(root: Path, full: Path) -> str:
     return full.resolve().relative_to(root.resolve()).as_posix()
 
 
-TEXT_EXTENSIONS = {".ipynb", ".py", ".r", ".csv", ".md", ".markdown", ".tex", ".html", ".htm", ".bib", ".txt", ".json", ".csl", ".yaml", ".yml"}
+TEXT_EXTENSIONS = {".ipynb", ".py", ".r", ".csv", ".tsv", ".excalidraw", ".md", ".markdown", ".tex", ".html", ".htm", ".bib", ".txt", ".json", ".csl", ".yaml", ".yml"}
 
 FORMAT_BY_EXT = {
     ".md": "markdown",
@@ -49,3 +49,17 @@ def doc_format(path: str) -> str | None:
 
 def is_text(path: str) -> bool:
     return PurePosixPath(path).suffix.lower() in TEXT_EXTENSIONS
+
+
+# Files with their own editor in the app, besides the manuscript formats above.
+KIND_BY_EXT = {
+    ".excalidraw": "drawing",
+    ".csv": "sheet",
+    ".tsv": "sheet",
+    ".xlsx": "sheet",
+    ".xlsm": "sheet",
+}
+
+
+def file_kind(path: str) -> str | None:
+    return KIND_BY_EXT.get(PurePosixPath(path).suffix.lower())

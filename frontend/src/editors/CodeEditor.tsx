@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import CodeMirror, { Decoration, EditorView, keymap, ReactCodeMirrorRef, ViewPlugin, type DecorationSet, type ViewUpdate } from "@uiw/react-codemirror";
-import { Prec, RangeSetBuilder } from "@codemirror/state";
+import { Prec, RangeSetBuilder, type Extension } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { python } from "@codemirror/lang-python";
 import { languages } from "@codemirror/language-data";
@@ -81,6 +81,8 @@ export default function CodeEditor({
   readOnly,
   minimal,
   extraKeys,
+  extraExtensions,
+  onReady,
 }: {
   value: string;
   onChange?: (v: string) => void;
@@ -90,18 +92,23 @@ export default function CodeEditor({
   /** Compact mode for notebook cells: no line numbers, grows with content. */
   minimal?: boolean;
   extraKeys?: Parameters<typeof keymap.of>[0];
+  /** More CodeMirror extensions, e.g. comment highlights. Keep the value stable (useMemo). */
+  extraExtensions?: Extension;
+  /** Called once the CodeMirror view exists (it is created after the first render). */
+  onReady?: (view: EditorView) => void;
 }) {
   const { dark } = usePrefs();
   const extensions = useMemo(() => {
-    const ext = [EditorView.lineWrapping, EditorView.perLineTextDirection.of(true), lineDirection, persianKeys];
+    const ext: Extension[] = [EditorView.lineWrapping, EditorView.perLineTextDirection.of(true), lineDirection, persianKeys];
     // Highest precedence: the default keymap would otherwise turn Shift+Enter into a newline.
     if (extraKeys) ext.unshift(Prec.highest(keymap.of(extraKeys)));
     // Fenced code blocks inside Markdown are highlighted in their own language.
     if (language === "markdown") ext.push(markdown({ codeLanguages: languages }));
     if (language === "latex") ext.push(StreamLanguage.define(stex));
     if (language === "python") ext.push(python());
+    if (extraExtensions) ext.push(extraExtensions);
     return ext;
-  }, [language, extraKeys]);
+  }, [language, extraKeys, extraExtensions]);
 
   return (
     <CodeMirror
@@ -110,6 +117,7 @@ export default function CodeEditor({
       value={value}
       onChange={onChange}
       extensions={extensions}
+      onCreateEditor={onReady}
       readOnly={readOnly}
       theme={dark ? "dark" : "light"}
       basicSetup={{
