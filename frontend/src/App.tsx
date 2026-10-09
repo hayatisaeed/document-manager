@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 import ProjectsPage from "./pages/ProjectsPage";
 import SettingsPage from "./pages/SettingsPage";
+import EnvironmentsPage from "./pages/EnvironmentsPage";
 import Workspace from "./pages/Workspace";
 import { ToastHost } from "./components/Toast";
 import { api } from "./api";
@@ -26,6 +27,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<ProjectsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/environments" element={<EnvironmentsPage />} />
         <Route path="/p/:slug" element={<Workspace />} />
         <Route
           path="*"
