@@ -13,6 +13,9 @@ PROJECTS_DIR = DATA_DIR / "projects"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Fonts used for Persian text in PDF/HTML exports (Vazirmatn, SIL OFL).
+FONTS_DIR = Path(os.environ.get("DM_FONTS_DIR", BASE_DIR / "core" / "fonts"))
+
 # Built React app (copied here by the Docker build, or `npm run build`).
 FRONTEND_DIST = Path(os.environ.get("DM_FRONTEND_DIST", BASE_DIR.parent / "frontend" / "dist"))
 
@@ -66,7 +69,8 @@ USE_I18N = False
 USE_TZ = True
 
 STATIC_URL = "/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT = DATA_DIR / "static"
+STATIC_ROOT.mkdir(parents=True, exist_ok=True)
 WHITENOISE_ROOT = FRONTEND_DIST if FRONTEND_DIST.exists() else None
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

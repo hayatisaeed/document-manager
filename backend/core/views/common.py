@@ -6,6 +6,8 @@ from rest_framework.views import exception_handler as drf_exception_handler
 from core.models import Project
 from core.services.bib import BibError
 from core.services.git import GitError
+from core.services.kernels import KernelError
+from core.services.notebooks import NotebookError
 from core.services.pandoc import PandocError
 from core.services.paths import PathError
 
@@ -14,6 +16,8 @@ ERROR_STATUS = {
     PathError: status.HTTP_400_BAD_REQUEST,
     PandocError: status.HTTP_422_UNPROCESSABLE_ENTITY,
     BibError: status.HTTP_400_BAD_REQUEST,
+    NotebookError: status.HTTP_400_BAD_REQUEST,
+    KernelError: status.HTTP_422_UNPROCESSABLE_ENTITY,
     FileExistsError: status.HTTP_409_CONFLICT,
     FileNotFoundError: status.HTTP_404_NOT_FOUND,
     PermissionError: status.HTTP_403_FORBIDDEN,

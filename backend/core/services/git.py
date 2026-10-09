@@ -300,13 +300,46 @@ def diff(repo: Path, base: str | None = None, target: str | None = None,
             untracked = [u for u in untracked if u == path or u.startswith(path.rstrip("/") + "/")]
         if untracked:
             run(repo, "add", "--intent-to-add", "--", *untracked)
-    args = ["diff", "-M", "--no-color", *range_args]
-    if path:
-        args += ["--", path]
-    return {
-        "patch": out(repo, *args),
-        "files": _changed_files(repo, *range_args, path=path),
-    }
+    args = ["diff", "-M", "--no-color", *range_args, "--"]
+    args += [path] if path else ["."]
+    args.append(":(exclude,glob)**/*.ipynb")
+    files = _changed_files(repo, *range_args, path=path)
+    patch = out(repo, *args)
+    # Notebooks: diff a readable text form instead of raw JSON (outputs summarised).
+    for f in files:
+        if f["path"].endswith(".ipynb"):
+            patch += _notebook_patch(repo, base, target, f["path"], f["orig_path"])
+    return {"patch": patch, "files": files}
+
+
+def _blob(repo: Path, ref: str, path: str) -> str | None:
+    if ref == EMPTY_TREE:
+        return None
+    proc = run(repo, "show", f"{ref}:{path}", check=False)
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def _notebook_patch(repo: Path, base: str, target: str | None, path: str, orig: str | None) -> str:
+    import difflib
+
+    from .notebooks import to_text
+
+    old = _blob(repo, base, orig or path)
+    if target is None:
+        working = repo / path
+        new = working.read_text(encoding="utf-8", errors="replace") if working.exists() else None
+    else:
+        new = _blob(repo, target, path)
+    lines = list(difflib.unified_diff(to_text(old).splitlines(), to_text(new).splitlines(),
+                                      f"a/{orig or path}", f"b/{path}", lineterm="", n=3))
+    if not lines:
+        return ""
+    header = f"diff --git a/{orig or path} b/{path}\n"
+    if old is None:
+        header += "new file mode 100644\n"
+    elif new is None:
+        header += "deleted file mode 100644\n"
+    return header + "\n".join(lines) + "\n"
 
 
 def file_at(repo: Path, ref: str, path: str) -> str:

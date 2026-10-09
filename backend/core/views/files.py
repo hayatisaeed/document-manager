@@ -1,6 +1,8 @@
 import mimetypes
 import re
 
+from django.conf import settings
+
 from django.http import FileResponse
 from rest_framework.decorators import api_view, parser_classes
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -141,7 +143,8 @@ def preview(request, slug):
     project = get_project(slug)
     path = request.data.get("path")
     safe_path(project.path, path)
-    html = pandoc.preview(project.path, slug, path, request.data.get("content", ""))
+    html = pandoc.preview(project.path, slug, path, request.data.get("content", ""),
+                          theme=request.data.get("theme", "light"))
     return Response({"html": html})
 
 
@@ -152,7 +155,7 @@ def export(request, slug):
     paths = request.data.get("paths") or None
     for p in paths or []:
         safe_path(project.path, p)
-    output = pandoc.export(project.path, fmt, paths)
+    output = pandoc.export(project.path, fmt, paths, theme=request.data.get("theme") or None)
     response = FileResponse(open(output, "rb"), content_type=pandoc.EXPORT_FORMATS[fmt]["mime"])
     response["Content-Disposition"] = f'attachment; filename="{output.name}"'
     return response
@@ -188,3 +191,17 @@ def cite(request, slug):
     keys = [k for k in request.query_params.get("keys", "").split(",") if k]
     fmt = request.query_params.get("fmt", "markdown")
     return Response({"markup": bib.citation_markup(fmt, keys)})
+
+
+FONT_FILES = {"Vazirmatn-Regular.ttf", "Vazirmatn-Bold.ttf"}
+
+
+@api_view(["GET"])
+def font(request, name):
+    """Fonts for the preview iframe (sandboxed, so it needs CORS to load them)."""
+    if name not in FONT_FILES:
+        raise FileNotFoundError(name)
+    response = FileResponse(open(settings.FONTS_DIR / name, "rb"), content_type="font/ttf")
+    response["Access-Control-Allow-Origin"] = "*"
+    response["Cache-Control"] = "max-age=86400"
+    return response

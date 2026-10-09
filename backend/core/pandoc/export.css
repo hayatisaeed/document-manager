@@ -1,0 +1,53 @@
+/* Styles for HTML/EPUB exports and the in-app preview. */
+:root {
+  --dm-text: #1d232b; --dm-bg: #ffffff; --dm-muted: #667180; --dm-border: rgba(127,127,127,.35);
+  --dm-code-bg: #f3f4f6; --dm-link: #2f5f93;
+  --dm-note: #3b6ea8; --dm-tip: #2e7d4f; --dm-important: #7b4bb3; --dm-warning: #b7791f;
+  --dm-danger: #b4372f; --dm-example: #46708a; --dm-quote: #6b7280;
+}
+html[data-theme="dark"] {
+  --dm-text: #e3e7ec; --dm-bg: #171b21; --dm-muted: #9099a7; --dm-border: rgba(160,170,185,.3);
+  --dm-code-bg: #232a33; --dm-link: #8ab4f8;
+  --dm-note: #6a9fd8; --dm-tip: #5fbf87; --dm-important: #b294e0; --dm-warning: #e0b057;
+  --dm-danger: #ef7b72; --dm-example: #7fb1cc; --dm-quote: #a3abb7;
+  color-scheme: dark;
+}
+html { background: var(--dm-bg); }
+body {
+  color: var(--dm-text); background: var(--dm-bg);
+  font-family: Georgia, "Times New Roman", "Vazirmatn", serif;
+  line-height: 1.7; max-width: 44em; margin: 0 auto; padding: 24px 28px 64px;
+}
+html[lang^="fa"] body, html[dir="rtl"] body { font-family: "Vazirmatn", Georgia, serif; }
+a { color: var(--dm-link); }
+h1, h2, h3, h4, h5, h6 { font-family: system-ui, -apple-system, "Segoe UI", "Vazirmatn", sans-serif; line-height: 1.3; }
+/* Mixed Persian/English: every block takes the direction of its own text. */
+p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, dt, dd, figcaption, .callout-title {
+  unicode-bidi: plaintext; text-align: start;
+}
+img { max-width: 100%; }
+code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Vazirmatn", monospace; font-size: .88em; }
+pre, div.sourceCode { direction: ltr; text-align: left; unicode-bidi: isolate; }
+pre { background: var(--dm-code-bg); padding: 12px 14px; border-radius: 6px; overflow-x: auto; }
+div.sourceCode { background: var(--dm-code-bg); border-radius: 6px; margin: 1em 0; }
+div.sourceCode pre { background: transparent; margin: 0; }
+:not(pre) > code { background: var(--dm-code-bg); padding: .1em .3em; border-radius: 4px; }
+blockquote { margin-inline: 0; padding-inline-start: 1em; border-inline-start: 3px solid var(--dm-border); color: var(--dm-muted); }
+table { border-collapse: collapse; } th, td { border: 1px solid var(--dm-border); padding: 4px 8px; }
+.citation { color: var(--dm-link); }
+#refs { margin-top: 2em; padding-top: 1em; border-top: 1px solid var(--dm-border); font-size: .92em; }
+.csl-entry { margin-bottom: .5em; padding-inline-start: 1.5em; text-indent: -1.5em; }
+math { font-size: 1.05em; }
+
+.callout {
+  --c: var(--dm-note);
+  margin: 1.2em 0; border: 1px solid color-mix(in srgb, var(--c) 35%, transparent);
+  border-inline-start: 4px solid var(--c); border-radius: 6px;
+  background: color-mix(in srgb, var(--c) 8%, var(--dm-bg)); overflow: hidden;
+}
+.callout-title { font: 600 .95em system-ui, -apple-system, "Segoe UI", "Vazirmatn", sans-serif; color: var(--c); padding: .5em .9em 0; }
+.callout-body { padding: .1em .9em .2em; }
+.callout-body > :first-child { margin-top: .4em; }
+.callout-tip { --c: var(--dm-tip); } .callout-important { --c: var(--dm-important); }
+.callout-warning { --c: var(--dm-warning); } .callout-danger { --c: var(--dm-danger); }
+.callout-example { --c: var(--dm-example); } .callout-quote { --c: var(--dm-quote); }

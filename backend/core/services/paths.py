@@ -31,7 +31,7 @@ def rel_path(root: Path, full: Path) -> str:
     return full.resolve().relative_to(root.resolve()).as_posix()
 
 
-TEXT_EXTENSIONS = {".md", ".markdown", ".tex", ".html", ".htm", ".bib", ".txt", ".json", ".csl", ".yaml", ".yml"}
+TEXT_EXTENSIONS = {".ipynb", ".py", ".r", ".csv", ".md", ".markdown", ".tex", ".html", ".htm", ".bib", ".txt", ".json", ".csl", ".yaml", ".yml"}
 
 FORMAT_BY_EXT = {
     ".md": "markdown",
@@ -39,6 +39,7 @@ FORMAT_BY_EXT = {
     ".tex": "latex",
     ".html": "html",
     ".htm": "html",
+    ".ipynb": "ipynb",
 }
 
 

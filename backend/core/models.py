@@ -9,6 +9,10 @@ class AppSettings(models.Model):
 
     author_name = models.CharField(max_length=200, blank=True, default="")
     author_email = models.CharField(max_length=200, blank=True, default="")
+    # Interface preferences.
+    ui_language = models.CharField(max_length=8, default="en")  # en | fa
+    theme = models.CharField(max_length=8, default="system")  # system | light | dark
+    calendar = models.CharField(max_length=10, default="auto")  # auto | gregorian | jalali
 
     @classmethod
     def load(cls) -> "AppSettings":

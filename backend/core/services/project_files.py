@@ -9,6 +9,7 @@ import re
 import shutil
 from pathlib import Path
 
+from . import notebooks
 from .htmlfmt import format_html
 from .paths import doc_format, is_text, rel_path, safe_path
 
@@ -36,7 +37,7 @@ GITATTRIBUTES = """* text=auto
 *.docx binary
 """
 
-EXTENSIONS = {"markdown": ".md", "latex": ".tex", "html": ".html"}
+EXTENSIONS = {"markdown": ".md", "latex": ".tex", "html": ".html", "ipynb": ".ipynb"}
 
 STATUSES = ["idea", "outline", "draft", "revision", "final"]
 
@@ -49,9 +50,10 @@ def default_manifest(title: str, kind: str = "book", description: str = "",
         "authors": authors or [],
         "kind": kind,
         "description": description,
+        "language": "auto",
         "manuscript": [],
         "files": {},
-        "export": {"toc": True, "number_sections": False, "pdf_engine": "xelatex", "csl": ""},
+        "export": {"toc": True, "number_sections": False, "pdf_engine": "lualatex", "csl": "", "theme": "light"},
     }
 
 
@@ -75,6 +77,8 @@ def write_manifest(root: Path, manifest: dict) -> None:
 
 
 def starter_content(fmt: str, title: str) -> str:
+    if fmt == "ipynb":
+        return notebooks.normalise(json.dumps(notebooks.new_notebook(title)))
     if fmt == "latex":
         return f"\\section{{{title}}}\n\n"
     if fmt == "html":
@@ -158,8 +162,11 @@ def read_text(root: Path, rel: str) -> str:
 
 def write_text(root: Path, rel: str, content: str) -> None:
     target = safe_path(root, rel)
-    if doc_format(rel) == "html":
+    fmt = doc_format(rel)
+    if fmt == "html":
         content = format_html(content)
+    elif fmt == "ipynb":
+        content = notebooks.normalise(content)
     content = content.replace("\r\n", "\n")
     if content and not content.endswith("\n"):
         content += "\n"  # POSIX text files; avoids "No newline at end of file" noise in diffs.
@@ -211,10 +218,13 @@ def delete(root: Path, rel: str) -> None:
 _TAG_RE = re.compile(r"<[^>]+>")
 _LATEX_CMD_RE = re.compile(r"\\[a-zA-Z@]+\*?(\[[^\]]*\])?")
 _MD_SYNTAX_RE = re.compile(r"[#*_`>\[\]()!|~-]")
-_WORD_RE = re.compile(r"[\w'’]+", re.UNICODE)
+# \u200c (zero-width non-joiner, Persian "half-space") joins parts of one word: می‌روم.
+_WORD_RE = re.compile(r"[\w'’\u200c]+", re.UNICODE)
 
 
 def plain_text(content: str, fmt: str | None) -> str:
+    if fmt == "ipynb":
+        return _MD_SYNTAX_RE.sub(" ", notebooks.markdown_text(content))
     if fmt == "html":
         return _TAG_RE.sub(" ", content)
     if fmt == "latex":
@@ -247,11 +257,26 @@ def stats(root: Path) -> dict:
     return {"total_words": total, "target_words": target, "chapters": chapters}
 
 
+# Arabic vs. Persian letter forms, Arabic-Indic vs. Persian digits, and
+# diacritics/tatweel are treated as equal so searches match however text was typed.
+_SEARCH_MAP = str.maketrans({
+    "\u064a": "\u06cc", "\u0649": "\u06cc", "\u0643": "\u06a9", "\u0629": "\u0647", "\u0640": None,
+    "\u200c": " ", "\u00a0": " ",
+    **{chr(0x0660 + i): str(i) for i in range(10)},
+    **{chr(0x06F0 + i): str(i) for i in range(10)},
+    **{chr(c): None for c in range(0x064B, 0x0653)},
+})
+
+
+def normalise_for_search(text: str) -> str:
+    return text.translate(_SEARCH_MAP).lower()
+
+
 def search(root: Path, query: str, limit: int = 200) -> list[dict]:
     query = query.strip()
     if not query:
         return []
-    needle = query.lower()
+    needle = normalise_for_search(query)
     results = []
     for item in tree(root):
         if item["type"] != "file" or not item["text"]:
@@ -261,7 +286,7 @@ def search(root: Path, query: str, limit: int = 200) -> list[dict]:
         except OSError:
             continue
         for number, line in enumerate(lines, 1):
-            if needle in line.lower():
+            if needle in normalise_for_search(line):
                 snippet = plain_text(line, item["format"]).strip() if item["format"] == "html" else line.strip()
                 results.append({"path": item["path"], "line": number, "snippet": snippet[:240]})
                 if len(results) >= limit:
