@@ -91,8 +91,17 @@ def escape_html(text: str) -> str:
 
 
 def slugify(text: str) -> str:
-    slug = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
-    return slug[:60] or "untitled"
+    """ASCII slug for folder names and URLs; non-Latin titles get a short stable id."""
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()[:60]
+    if len(slug) < 3 and text.strip():
+        import hashlib
+        slug = (slug + "-" if slug else "project-") + hashlib.sha1(text.strip().encode()).hexdigest()[:6]
+    return slug or "untitled"
+
+
+def _is_persian(text: str) -> bool:
+    rtl = len(re.findall("[\u0600-\u06ff]", text))
+    return rtl > len(re.findall("[A-Za-z]", text))
 
 
 def scaffold(root: Path, title: str, kind: str, fmt: str, description: str, authors: list[str]) -> None:
@@ -105,15 +114,21 @@ def scaffold(root: Path, title: str, kind: str, fmt: str, description: str, auth
     (root / BIBLIOGRAPHY).write_text("", encoding="utf-8")
 
     manifest = default_manifest(title, kind, description, authors)
+    persian = _is_persian(title + " " + description)
+    if persian:
+        manifest["language"] = "fa"
     ext = EXTENSIONS[fmt]
-    first_title = "Introduction" if kind == "book" else "Abstract"
-    first = f"manuscript/01-{slugify(first_title)}{ext}"
+    if persian:
+        first_title, ideas = ("مقدمه" if kind == "book" else "چکیده"), "ایده‌ها"
+    else:
+        first_title, ideas = ("Introduction" if kind == "book" else "Abstract"), "Ideas"
+    first = f"manuscript/01-{'introduction' if kind == 'book' else 'abstract'}{ext}"
     write_text(root, first, starter_content(fmt, first_title))
     manifest["manuscript"].append(first)
     manifest["files"][first] = {"title": first_title, "status": "draft", "tags": [], "target_words": 0}
 
-    write_text(root, "notes/ideas.md", "# Ideas\n\n- \n")
-    manifest["files"]["notes/ideas.md"] = {"title": "Ideas", "status": "idea", "tags": ["notes"], "target_words": 0}
+    write_text(root, "notes/ideas.md", f"# {ideas}\n\n- \n")
+    manifest["files"]["notes/ideas.md"] = {"title": ideas, "status": "idea", "tags": ["notes"], "target_words": 0}
 
     readme = f"# {title}\n\n{description}\n\nManaged with Document Manager.\n"
     (root / "README.md").write_text(readme, encoding="utf-8")

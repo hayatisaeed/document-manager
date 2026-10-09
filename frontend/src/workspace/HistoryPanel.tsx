@@ -6,6 +6,8 @@ import { toast } from "../components/Toast";
 import type { Branches, Commit, CommitDetail } from "../types";
 import { formatDate, relativeTime } from "../util";
 import { useWorkspace } from "./context";
+import { t } from "../i18n";
+import { fmtNum } from "../prefs";
 
 const PAGE = 50;
 
@@ -63,10 +65,10 @@ export default function HistoryPanel({ path }: { path?: string }) {
   };
 
   const restore = async (sha: string) => {
-    if (!path || !confirm(`Replace the current ${path} with the version from ${sha.slice(0, 7)}? You can review and commit the result.`)) return;
+    if (!path || !confirm(t("Replace the current {path} with the version from {sha}? You can review and commit the result.", { path, sha: sha.slice(0, 7) }))) return;
     const ok = await runGit(() => api.post(p("git/restore/"), { ref: sha, path }), { reloadEditor: true });
     if (ok !== undefined) {
-      toast("Version restored. Review it, then commit.", "success");
+      toast(t("Version restored. Review it, then commit."), "success");
       setView({ name: "editor", path });
     }
   };
@@ -74,15 +76,22 @@ export default function HistoryPanel({ path }: { path?: string }) {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2>History {path && <span className="muted mono small">· {path}</span>}</h2>
+        <h2>
+          {t("History")}{" "}
+          {path && (
+            <span className="muted mono small" dir="auto">
+              · {path}
+            </span>
+          )}
+        </h2>
         <div className="row">
           {path && (
             <button className="btn btn-sm" onClick={() => setView({ name: "history" })}>
-              Whole project
+              {t("Whole project")}
             </button>
           )}
-          <select value={ref} onChange={(e) => setRef(e.target.value)} aria-label="Branch">
-            <option value="">Current branch ({status?.branch})</option>
+          <select value={ref} onChange={(e) => setRef(e.target.value)} aria-label={t("Branch")}>
+            <option value="">{t("Current branch ({branch})", { branch: status?.branch ?? "" })}</option>
             {branches?.local.filter((b) => b.name !== branches.current).map((b) => (
               <option key={b.name} value={b.name}>
                 {b.name}
@@ -90,12 +99,12 @@ export default function HistoryPanel({ path }: { path?: string }) {
             ))}
             {branches?.remote.map((b) => (
               <option key={b.name} value={b.name}>
-                {b.name} (remote)
+                {b.name} ({t("remote")})
               </option>
             ))}
           </select>
-          <button className="btn btn-sm" disabled={compare.length !== 2} onClick={runCompare} title="Tick two commits to compare them">
-            Compare {compare.length}/2
+          <button className="btn btn-sm" disabled={compare.length !== 2} onClick={runCompare} title={t("Tick two commits to compare them")}>
+            {t("Compare")} {fmtNum(compare.length)}/{fmtNum(2)}
           </button>
         </div>
       </div>
@@ -103,32 +112,33 @@ export default function HistoryPanel({ path }: { path?: string }) {
         <ul className="commit-list">
           {commits.map((c) => (
             <li key={c.sha} className={selected?.sha === c.sha ? "active" : ""}>
-              <input type="checkbox" checked={compare.includes(c.sha)} onChange={() => toggleCompare(c.sha)} aria-label="Select to compare" />
+              <input type="checkbox" checked={compare.includes(c.sha)} onChange={() => toggleCompare(c.sha)} aria-label={t("Select to compare")} />
               <button className="commit-main" onClick={() => open(c.sha)}>
-                <span className="commit-subject">
-                  {c.parents.length > 1 && <span className="badge">merge</span>} {c.subject}
+                <span className="commit-subject" dir="auto">
+                  {c.parents.length > 1 && <span className="badge">{t("merge")}</span>} {c.subject}
                 </span>
                 <span className="muted small">
-                  {c.author} · <span title={formatDate(c.date)}>{relativeTime(c.date)}</span> · <span className="mono">{c.short}</span>
+                  <span dir="auto">{c.author}</span> · <span title={formatDate(c.date)}>{relativeTime(c.date)}</span> ·{" "}
+                  <span className="mono">{c.short}</span>
                 </span>
               </button>
               {path && (
                 <span className="commit-actions">
                   <button className="link small" onClick={() => viewVersion(c.sha)}>
-                    View
+                    {t("View")}
                   </button>
                   <button className="link small" onClick={() => restore(c.sha)}>
-                    Restore
+                    {t("Restore")}
                   </button>
                 </span>
               )}
             </li>
           ))}
-          {commits.length === 0 && <li className="muted pad">No commits yet.</li>}
+          {commits.length === 0 && <li className="muted pad">{t("No commits yet.")}</li>}
           {more && (
             <li>
               <button className="btn btn-sm full" onClick={() => load(commits.length)}>
-                Load more
+                {t("Load more")}
               </button>
             </li>
           )}
@@ -136,29 +146,35 @@ export default function HistoryPanel({ path }: { path?: string }) {
         <div className="history-detail">
           {comparePatch !== null ? (
             <>
-              <h3>Comparison</h3>
-              <DiffView patch={comparePatch} emptyText="No differences." />
+              <h3>{t("Comparison")}</h3>
+              <DiffView patch={comparePatch} emptyText={t("No differences.")} />
             </>
           ) : selected ? (
             <>
-              <h3>{selected.subject}</h3>
-              {selected.body && <pre className="commit-body">{selected.body}</pre>}
+              <h3 dir="auto">{selected.subject}</h3>
+              {selected.body && (
+                <pre className="commit-body" dir="auto">
+                  {selected.body}
+                </pre>
+              )}
               <p className="muted small">
                 {selected.author} &lt;{selected.email}&gt; · {formatDate(selected.date)} · <span className="mono">{selected.sha}</span>
               </p>
               <DiffView patch={selected.patch} />
             </>
           ) : (
-            <p className="muted pad">Select a commit to see what changed, or tick two commits and press Compare.</p>
+            <p className="muted pad">{t("Select a commit to see what changed, or tick two commits and press Compare.")}</p>
           )}
         </div>
       </div>
       {viewing && path && (
         <Modal title={`${path} @ ${viewing.sha.slice(0, 7)}`} onClose={() => setViewing(null)} wide>
-          <pre className="file-view">{viewing.content}</pre>
+          <pre className="file-view" dir="auto">
+            {viewing.content}
+          </pre>
           <div className="row end">
             <button className="btn btn-primary" onClick={() => restore(viewing.sha).then(() => setViewing(null))}>
-              Restore this version
+              {t("Restore this version")}
             </button>
           </div>
         </Modal>

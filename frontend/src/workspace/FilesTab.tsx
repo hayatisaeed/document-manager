@@ -5,6 +5,7 @@ import { toast, toastError } from "../components/Toast";
 import type { TreeItem } from "../types";
 import { basename, dirname } from "../util";
 import { useWorkspace } from "./context";
+import { t } from "../i18n";
 
 export default function FilesTab() {
   const { tree, view, openFile, p, runGit, manifest, saveManifest, status, refresh } = useWorkspace();
@@ -39,7 +40,7 @@ export default function FilesTab() {
     Array.from(files).forEach((f) => form.append("files", f));
     try {
       const res = await api.post<{ paths: string[] }>(p("upload/"), form);
-      toast(`Uploaded ${res.paths.length} file(s) to ${selectedDir || "attachments"}`, "success");
+      toast(t("Uploaded {n} file(s) to {dir}", { n: res.paths.length, dir: selectedDir || "attachments" }), "success");
       await refresh();
     } catch (e) {
       toastError(e);
@@ -47,25 +48,25 @@ export default function FilesTab() {
   };
 
   const del = (path: string) => {
-    if (!confirm(`Delete ${path}?`)) return;
+    if (!confirm(t("Delete {path}?", { path }))) return;
     runGit(() => api.del(p(`file/?path=${encodeURIComponent(path)}`)), { reloadEditor: true });
   };
 
   return (
     <div className="side-section">
       <div className="side-head">
-        <span className="muted" title="New files and uploads go here">
-          in <span className="mono">{selectedDir || "/"}</span>
+        <span className="muted" title={t("New files and uploads go here")}>
+          {t("in")} <span className="mono" dir="auto">{selectedDir || "/"}</span>
         </span>
         <span className="row tight">
           <button className="btn btn-sm" onClick={() => setDialog({ kind: "file" })}>
-            + File
+            {t("+ File")}
           </button>
           <button className="btn btn-sm" onClick={() => setDialog({ kind: "dir" })}>
-            + Folder
+            {t("+ Folder")}
           </button>
           <button className="btn btn-sm" onClick={() => uploadRef.current?.click()}>
-            Upload
+            {t("Upload")}
           </button>
           <input ref={uploadRef} type="file" multiple hidden onChange={(e) => upload(e.target.files).finally(() => (e.target.value = ""))} />
         </span>
@@ -102,7 +103,7 @@ export default function FilesTab() {
                   }}
                 >
                   <span className="tree-icon">{collapsed[item.path] ? "▸" : "▾"}</span>
-                  {name}/
+                  <span dir="auto">{name}/</span>
                 </button>
               </li>
             );
@@ -122,20 +123,20 @@ export default function FilesTab() {
                 title={item.path}
               >
                 <span className="tree-icon">{fileIcon(item)}</span>
-                <span className="tree-name">{name}</span>
+                <span className="tree-name" dir="auto">{name}</span>
                 {st && <span className={`git-mark git-${st}`}>{st[0].toUpperCase()}</span>}
               </button>
               <span className="tree-actions">
                 {item.format && !inManuscript && (
-                  <button className="link" title="Add to manuscript" onClick={() => saveManifest({ manuscript: [...manifest.manuscript, item.path] }).catch(toastError)}>
+                  <button className="link" title={t("Add to manuscript")} onClick={() => saveManifest({ manuscript: [...manifest.manuscript, item.path] }).catch(toastError)}>
                     +📖
                   </button>
                 )}
-                <button className="link" title="Rename / move" onClick={() => setDialog({ kind: "rename", path: item.path })}>
+                <button className="link" title={t("Rename / move")} onClick={() => setDialog({ kind: "rename", path: item.path })}>
                   ✎
                 </button>
                 {item.path !== "project.json" && (
-                  <button className="link danger" title="Delete" onClick={() => del(item.path)}>
+                  <button className="link danger" title={t("Delete")} onClick={() => del(item.path)}>
                     🗑
                   </button>
                 )}
@@ -144,7 +145,7 @@ export default function FilesTab() {
           );
         })}
       </ul>
-      <p className="muted small pad">Drop files here to upload them into the selected folder.</p>
+      <p className="muted small pad">{t("Drop files here to upload them into the selected folder.")}</p>
       {dialog?.kind === "rename" && <RenameDialog path={dialog.path} onClose={() => setDialog(null)} />}
       {(dialog?.kind === "file" || dialog?.kind === "dir") && (
         <NewDialog kind={dialog.kind} dir={selectedDir} onClose={() => setDialog(null)} />
@@ -157,6 +158,7 @@ function fileIcon(item: TreeItem) {
   if (item.format === "markdown") return "M";
   if (item.format === "latex") return "T";
   if (item.format === "html") return "R";
+  if (item.format === "ipynb") return "J";
   if (/\.(png|jpe?g|gif|webp|svg)$/i.test(item.path)) return "▣";
   if (/\.pdf$/i.test(item.path)) return "P";
   if (/\.bib$/i.test(item.path)) return "B";
@@ -178,23 +180,21 @@ function NewDialog({ kind, dir, onClose }: { kind: "file" | "dir"; dir: string; 
     }
   };
   return (
-    <Modal title={kind === "file" ? "New file" : "New folder"} onClose={onClose}>
+    <Modal title={kind === "file" ? t("New file") : t("New folder")} onClose={onClose}>
       <form className="form" onSubmit={submit}>
         <label>
-          Path
-          <input autoFocus value={path} onChange={(e) => setPath(e.target.value)} placeholder={kind === "file" ? "notes/interview-1.md" : "notes/interviews"} />
+          {t("Path")}
+          <input autoFocus dir="auto" value={path} onChange={(e) => setPath(e.target.value)} placeholder={kind === "file" ? "notes/interview-1.md" : "notes/interviews"} />
           {kind === "file" && (
-            <small className="muted">
-              Use <code>.md</code> for Markdown, <code>.tex</code> for LaTeX, <code>.html</code> for rich text, or <code>.txt</code>.
-            </small>
+            <small className="muted">{t("Use .md for Markdown, .tex for LaTeX, .html for rich text, .ipynb for a Jupyter notebook, or .txt.")}</small>
           )}
         </label>
         <div className="row end">
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button className="btn btn-primary" disabled={!path.trim() || path.endsWith("/")}>
-            Create
+            {t("Create")}
           </button>
         </div>
       </form>
@@ -212,18 +212,18 @@ function RenameDialog({ path, onClose }: { path: string; onClose: () => void }) 
     onClose();
   };
   return (
-    <Modal title="Rename or move" onClose={onClose}>
+    <Modal title={t("Rename or move")} onClose={onClose}>
       <form className="form" onSubmit={submit}>
         <label>
-          New path
-          <input autoFocus value={dest} onChange={(e) => setDest(e.target.value)} />
+          {t("New path")}
+          <input autoFocus dir="auto" value={dest} onChange={(e) => setDest(e.target.value)} />
         </label>
         <div className="row end">
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button className="btn btn-primary" disabled={!dest.trim() || dest === path}>
-            Rename
+            {t("Rename")}
           </button>
         </div>
       </form>

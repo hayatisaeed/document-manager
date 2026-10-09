@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { api, ApiError, download, qs } from "../api";
-import CodeEditor, { insertAtCursor, wrapSelection } from "../editors/CodeEditor";
-import RichEditor, { RichEditorHandle } from "../editors/RichEditor";
+import CodeEditor, { insertAtCursor, wrapSelection, ZWNJ } from "../editors/CodeEditor";
+import RichEditor, { CALLOUT_LABEL, CALLOUT_TYPES, CODE_LANGUAGES, RichEditorHandle } from "../editors/RichEditor";
+import NotebookView from "./NotebookView";
+import { t } from "../i18n";
+import { fmtNum, usePrefs } from "../prefs";
 import Modal from "../components/Modal";
 import PreviewFrame from "../components/PreviewFrame";
 import { toast, toastError } from "../components/Toast";
@@ -20,13 +23,14 @@ export default function DocumentView({ path }: { path: string }) {
   if (ws.tree.length && !item) {
     return (
       <div className="empty">
-        <h2>File not found</h2>
+        <h2>{t("File not found")}</h2>
         <p className="muted mono">{path}</p>
-        <p className="muted">It may have been renamed, deleted, or not exist on this branch.</p>
+        <p className="muted">{t("It may have been renamed, deleted, or not exist on this branch.")}</p>
       </div>
     );
   }
   if (item && !item.text) return <BinaryView item={item} />;
+  if (path.endsWith(".ipynb")) return <NotebookView path={path} />;
   return <TextDocument path={path} />;
 }
 
@@ -36,9 +40,11 @@ function BinaryView({ item }: { item: TreeItem }) {
   return (
     <div className="doc">
       <div className="doc-head">
-        <h2 className="doc-path">{item.path}</h2>
+        <h2 className="doc-path" dir="auto">
+          {item.path}
+        </h2>
         <a className="btn btn-sm" href={url + "&download=1"}>
-          Download
+          {t("Download")}
         </a>
       </div>
       <div className="binary-view">
@@ -47,7 +53,7 @@ function BinaryView({ item }: { item: TreeItem }) {
         ) : /\.pdf$/i.test(item.path) ? (
           <iframe src={url} title={item.path} />
         ) : (
-          <p className="muted">No preview for this file type ({((item.size ?? 0) / 1024).toFixed(1)} KB).</p>
+          <p className="muted">{t("No preview for this file type ({size} KB).", { size: fmtNum(Math.round((item.size ?? 0) / 1024)) })}</p>
         )}
       </div>
     </div>
@@ -57,6 +63,7 @@ function BinaryView({ item }: { item: TreeItem }) {
 function TextDocument({ path }: { path: string }) {
   const ws = useWorkspace();
   const { p, manifest, saveManifest, refreshStatus, editorRef, status, setView, tree } = ws;
+  const { dark } = usePrefs();
   const [content, setContent] = useState<string | null>(null);
   const [format, setFormat] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
@@ -187,7 +194,7 @@ function TextDocument({ path }: { path: string }) {
     if (!showPreview || content === null || !format) return;
     const t = window.setTimeout(() => {
       api
-        .post<{ html: string }>(p("preview/"), { path, content: contentRef.current })
+        .post<{ html: string }>(p("preview/"), { path, content: contentRef.current, theme: dark ? "dark" : "light" })
         .then((r) => {
           setPreviewHtml(r.html);
           setPreviewError(null);
@@ -195,7 +202,7 @@ function TextDocument({ path }: { path: string }) {
         .catch((e) => setPreviewError(e.message));
     }, 500);
     return () => window.clearTimeout(t);
-  }, [showPreview, content, saveState, format, p, path]);
+  }, [showPreview, content, saveState, format, p, path, dark]);
 
   const meta: FileMeta = manifest.files[path] ?? {};
   const updateMeta = (patch: Partial<FileMeta>) =>
@@ -215,17 +222,33 @@ function TextDocument({ path }: { path: string }) {
     }
   };
 
+  const insertCallout = (type: string) => {
+    const text =
+      format === "latex"
+        ? `\n\\begin{callout}{${type}}{}\n\n\\end{callout}\n`
+        : `\n> [!${type}] \n> \n`;
+    insertAtCursor(view(), text);
+  };
+
+  const insertCode = (lang: string) => {
+    const text =
+      format === "latex"
+        ? `\n\\begin{lstlisting}[language=${lang}]\n\n\\end{lstlisting}\n`
+        : `\n\`\`\`${lang}\n\n\`\`\`\n`;
+    insertAtCursor(view(), text);
+  };
+
   const images = useMemo(() => tree.filter((t) => t.type === "file" && isImage(t.path)), [tree]);
 
   if (notFound) {
     return (
       <div className="empty">
-        <h2>File not found</h2>
+        <h2>{t("File not found")}</h2>
         <p className="muted mono">{path}</p>
       </div>
     );
   }
-  if (content === null) return <div className="pad muted">Loading…</div>;
+  if (content === null) return <div className="pad muted">{t("Loading…")}</div>;
 
   return (
     <div className="doc">
@@ -234,73 +257,89 @@ function TextDocument({ path }: { path: string }) {
           {format ? (
             <input
               className="doc-title"
+              dir="auto"
               defaultValue={meta.title ?? basename(path)}
               onBlur={(e) => e.target.value !== (meta.title ?? "") && updateMeta({ title: e.target.value })}
-              aria-label="Title"
+              aria-label={t("Title")}
             />
           ) : (
-            <h2 className="doc-path">{basename(path)}</h2>
+            <h2 className="doc-path" dir="auto">
+              {basename(path)}
+            </h2>
           )}
           <span className={`save-state save-${saveState}`}>
-            {saveState === "saved" ? (changed ? "Saved · uncommitted" : "Saved") : saveState === "saving" ? "Saving…" : saveState === "dirty" ? "Editing…" : "Save failed"}
+            {saveState === "saved"
+              ? changed
+                ? t("Saved · uncommitted")
+                : t("Saved")
+              : saveState === "saving"
+                ? t("Saving…")
+                : saveState === "dirty"
+                  ? t("Editing…")
+                  : t("Save failed")}
           </span>
         </div>
         <div className="doc-meta">
-          <span className="mono muted small">{path}</span>
-          {format && <span className="badge">{FORMAT_LABEL[format]}</span>}
+          <span className="mono muted small" dir="auto">
+            {path}
+          </span>
+          {format && <span className="badge">{t(FORMAT_LABEL[format])}</span>}
           {format && (
             <>
-              <select value={meta.status ?? "draft"} onChange={(e) => updateMeta({ status: e.target.value })} aria-label="Status">
+              <select value={meta.status ?? "draft"} onChange={(e) => updateMeta({ status: e.target.value })} aria-label={t("Status")}>
                 {STATUSES.map((s) => (
-                  <option key={s}>{s}</option>
+                  <option key={s} value={s}>
+                    {t(s)}
+                  </option>
                 ))}
               </select>
               <label className="inline-label">
-                Target
+                {t("Target")}
                 <input
                   type="number"
                   min={0}
                   step={100}
                   className="num-input"
                   defaultValue={meta.target_words || ""}
-                  placeholder="words"
+                  placeholder={t("words")}
                   onBlur={(e) => updateMeta({ target_words: Number(e.target.value) || 0 })}
                 />
               </label>
             </>
           )}
           <label className="inline-label">
-            Tags
+            {t("Tags")}
             <input
               className="tags-input"
+              dir="auto"
               defaultValue={(meta.tags ?? []).join(", ")}
-              placeholder="comma, separated"
+              placeholder={t("comma, separated")}
               onBlur={(e) =>
-                updateMeta({ tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })
+                updateMeta({ tags: e.target.value.split(/[,،]/).map((x) => x.trim()).filter(Boolean) })
               }
             />
           </label>
           <span className="spacer" />
           {changed && (
             <button className="btn btn-sm" onClick={() => setView({ name: "changes", path })}>
-              View changes
+              {t("View changes")}
             </button>
           )}
           <button className="btn btn-sm" onClick={() => setView({ name: "history", path })}>
-            History
+            {t("History")}
           </button>
           {format && (
             <>
               <button className={`btn btn-sm ${showPreview ? "btn-active" : ""}`} onClick={() => setShowPreview((s) => !s)}>
-                Preview
+                {t("Preview")}
               </button>
               <select
                 className="btn-sm"
                 value=""
                 onChange={(e) => e.target.value && exportChapter(e.target.value)}
-                aria-label="Export this chapter"
+                aria-label={t("Export this chapter")}
               >
-                <option value="">Export chapter…</option>
+                <option value="">{t("Export chapter…")}</option>
                 <option value="pdf">PDF</option>
                 <option value="docx">Word (.docx)</option>
                 <option value="html">HTML</option>
@@ -312,9 +351,9 @@ function TextDocument({ path }: { path: string }) {
 
       {conflicted && (
         <div className="banner banner-warn">
-          This file has merge conflicts.{" "}
+          {t("This file has merge conflicts.")}{" "}
           <button className="link" onClick={() => setView({ name: "conflict", path })}>
-            Open the conflict resolver →
+            {t("Open the conflict resolver →")}
           </button>
         </div>
       )}
@@ -323,26 +362,26 @@ function TextDocument({ path }: { path: string }) {
         <div className="toolbar">
           {format === "markdown" ? (
             <>
-              <button className="tb" onClick={() => wrapSelection(view(), "**")} title="Bold">
+              <button className="tb" onClick={() => wrapSelection(view(), "**")} title={t("Bold")}>
                 B
               </button>
-              <button className="tb" onClick={() => wrapSelection(view(), "*")} title="Italic">
+              <button className="tb" onClick={() => wrapSelection(view(), "*")} title={t("Italic")}>
                 I
               </button>
-              <button className="tb" onClick={() => insertAtCursor(view(), "\n## ")} title="Heading">
+              <button className="tb" onClick={() => insertAtCursor(view(), "\n## ")} title={t("Heading")}>
                 H
               </button>
               <button className="tb" onClick={() => insertAtCursor(view(), "\n- ")}>
-                • List
+                {t("• List")}
               </button>
               <button className="tb" onClick={() => wrapSelection(view(), "[", "](https://)")}>
-                Link
+                {t("Link")}
               </button>
-              <button className="tb" onClick={() => wrapSelection(view(), "$")} title="Inline math">
+              <button className="tb" onClick={() => wrapSelection(view(), "$")} title={t("Inline math")}>
                 ∑
               </button>
-              <button className="tb" onClick={() => insertAtCursor(view(), "[^1]")} title="Footnote">
-                Footnote
+              <button className="tb" onClick={() => insertAtCursor(view(), "[^1]")} title={t("Footnote")}>
+                {t("Footnote")}
               </button>
             </>
           ) : (
@@ -357,21 +396,38 @@ function TextDocument({ path }: { path: string }) {
                 §
               </button>
               <button className="tb" onClick={() => insertAtCursor(view(), "\n\\begin{itemize}\n  \\item \n\\end{itemize}\n")}>
-                • List
+                {t("• List")}
               </button>
               <button className="tb" onClick={() => wrapSelection(view(), "$")}>
                 ∑
               </button>
               <button className="tb" onClick={() => wrapSelection(view(), "\\footnote{", "}")}>
-                Footnote
+                {t("Footnote")}
               </button>
             </>
           )}
           <span className="tb-sep" />
+          <select className="tb-select" value="" onChange={(e) => e.target.value && insertCallout(e.target.value)} aria-label={t("Insert callout")}>
+            <option value="">{t("Callout…")}</option>
+            {CALLOUT_TYPES.map((c) => (
+              <option key={c} value={c}>
+                {t(CALLOUT_LABEL[c])}
+              </option>
+            ))}
+          </select>
+          <select className="tb-select" dir="ltr" value="" onChange={(e) => e.target.value && insertCode(e.target.value)} aria-label={t("Insert code block")}>
+            <option value="">{t("Code block…")}</option>
+            {CODE_LANGUAGES.map((l) => (
+              <option key={l}>{l}</option>
+            ))}
+          </select>
           <button className="tb" onClick={() => setPicker(true)}>
-            Image
+            {t("Image")}
           </button>
-          <span className="muted small tb-hint">Cite from the References tab</span>
+          <button className="tb" onClick={() => insertAtCursor(view(), ZWNJ)} title={t("Insert a half-space (ZWNJ) — Ctrl+Shift+2")}>
+            {t("Half-space")}
+          </button>
+          <span className="muted small tb-hint">{t("Cite from the References tab")}</span>
         </div>
       )}
 
@@ -396,15 +452,15 @@ function TextDocument({ path }: { path: string }) {
       {format === "html" && (
         <div className="doc-foot">
           <button className="btn btn-sm" onClick={() => setPicker(true)}>
-            Insert image
+            {t("Insert image")}
           </button>
-          <span className="muted small">Cite references from the References tab.</span>
+          <span className="muted small">{t("Cite references from the References tab.")}</span>
         </div>
       )}
       {picker && (
-        <Modal title="Insert image" onClose={() => setPicker(false)}>
+        <Modal title={t("Insert image")} onClose={() => setPicker(false)}>
           {images.length === 0 ? (
-            <p className="muted">No images yet. Upload some in the Files tab (into attachments/).</p>
+            <p className="muted">{t("No images yet. Upload some in the Files tab (into attachments/).")}</p>
           ) : (
             <div className="image-grid">
               {images.map((img) => (
@@ -414,7 +470,7 @@ function TextDocument({ path }: { path: string }) {
                   onClick={() => {
                     insertImage(img.path);
                     setPicker(false);
-                    toast("Image inserted");
+                    toast(t("Image inserted"));
                   }}
                 >
                   <img src={p("raw/") + qs({ path: img.path })} alt="" />

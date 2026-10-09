@@ -189,3 +189,27 @@ class NotebookTests(BaseTest):
             self.assertEqual(r.data["outputs"][0]["ename"], "ZeroDivisionError")
         finally:
             self.c.post(self.api(slug, "kernel/shutdown/"), {"path": path}, format="json")
+
+
+@unittest.skipUnless(pandoc.available(), "pandoc not installed")
+class RtlLayoutRegressionTests(BaseTest):
+    """Bugs found by exporting a real Persian book."""
+
+    def setUp(self):
+        super().setUp()
+        self.slug = self.create("سفر به جزیره")
+        self.c.put(self.api(self.slug, "file/?path=manuscript/01-introduction.md"), {
+            "content": f"# مقدمه\n\n{PERSIAN}\n\n> [!warning] هشدار\n> متن.\n\n```python\nprint('سلام')\n```\n"},
+            format="json")
+
+    def test_persian_project_gets_persian_starter_titles(self):
+        manifest = self.c.get(self.api(self.slug, "manifest/")).data
+        self.assertEqual(manifest["language"], "fa")
+        self.assertEqual(manifest["files"]["manuscript/01-introduction.md"]["title"], "مقدمه")
+
+    def test_code_blocks_stay_left_to_right_and_boxes_are_not_mirrored(self):
+        tex = export_bytes(self.c.post(self.api(self.slug, "export/"), {"format": "latex"}, format="json")).decode()
+        code = tex.index("\\begin{Shaded}")
+        self.assertGreater(code, tex.rindex("\\begin{otherlanguage}{english}", 0, code))
+        self.assertIn("layout=graphics", tex)  # babel: TikZ boxes in RTL text
+        self.assertIn("fallback=dmpersian", tex)  # Persian glyphs inside code

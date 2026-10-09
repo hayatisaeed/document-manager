@@ -1,4 +1,5 @@
 import { ReactNode, useEffect } from "react";
+import { t } from "../i18n";
 
 export default function Modal({
   title,
@@ -21,7 +22,7 @@ export default function Modal({
       <div className={`modal ${wide ? "modal-wide" : ""}`} role="dialog" aria-label={title}>
         <div className="modal-head">
           <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
+          <button className="icon-btn" onClick={onClose} aria-label={t("Close")}>
             ×
           </button>
         </div>

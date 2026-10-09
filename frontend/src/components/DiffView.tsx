@@ -1,4 +1,5 @@
 import { type ReactNode, useMemo, useState } from "react";
+import { t } from "../i18n";
 
 interface Line {
   kind: "add" | "del" | "ctx" | "hunk" | "meta";
@@ -94,28 +95,32 @@ function row(l: Line, content: ReactNode | string, key: number) {
       <td className="ln">{l.oldNo ?? ""}</td>
       <td className="ln">{l.newNo ?? ""}</td>
       <td className="sign">{l.kind === "add" ? "+" : l.kind === "del" ? "−" : ""}</td>
-      <td className="code">{content}</td>
+      <td className="code" dir="auto">
+        {content}
+      </td>
     </tr>
   );
 }
 
-export default function DiffView({ patch, emptyText = "No changes." }: { patch: string; emptyText?: string }) {
+export default function DiffView({ patch, emptyText }: { patch: string; emptyText?: string }) {
   const files = useMemo(() => parsePatch(patch), [patch]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  if (!files.length) return <p className="muted">{emptyText}</p>;
+  if (!files.length) return <p className="muted">{emptyText ?? t("No changes.")}</p>;
   return (
     <div className="diff">
       {files.map((f) => (
         <div className="diff-file" key={f.path}>
           <button className="diff-file-head" onClick={() => setCollapsed((c) => ({ ...c, [f.path]: !c[f.path] }))}>
             <span>{collapsed[f.path] ? "▸" : "▾"}</span>
-            <span className="mono">{f.path}</span>
+            <span className="mono" dir="auto">
+              {f.path}
+            </span>
             <span className="add-count">+{f.added}</span>
             <span className="del-count">−{f.removed}</span>
           </button>
           {!collapsed[f.path] &&
             (f.binary ? (
-              <p className="muted pad">Binary file changed.</p>
+              <p className="muted pad">{t("Binary file changed.")}</p>
             ) : (
               <table className="diff-table">
                 <tbody>{renderLines(f.lines)}</tbody>

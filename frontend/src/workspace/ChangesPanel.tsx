@@ -3,6 +3,7 @@ import { api, qs } from "../api";
 import DiffView from "../components/DiffView";
 import { toast } from "../components/Toast";
 import { useWorkspace } from "./context";
+import { t } from "../i18n";
 
 export default function ChangesPanel({ initialPath }: { initialPath?: string }) {
   const { status, p, runGit, setView, refreshStatus } = useWorkspace();
@@ -31,7 +32,7 @@ export default function ChangesPanel({ initialPath }: { initialPath?: string }) 
   }, [p, focus, key, status]);
 
   useEffect(() => {
-    if (status?.merging && !message) setMessage("Merge changes");
+    if (status?.merging && !message) setMessage(t("Merge changes"));
   }, [status?.merging]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const conflicts = useMemo(() => new Set(status?.conflicts ?? []), [status]);
@@ -53,51 +54,51 @@ export default function ChangesPanel({ initialPath }: { initialPath?: string }) 
     const res = await runGit(() => api.post<{ sha: string }>(p("git/commit/"), { message, paths: all ? undefined : paths }));
     setBusy(false);
     if (res) {
-      toast(`Committed ${res.sha.slice(0, 7)}`, "success");
+      toast(t("Committed {sha}", { sha: res.sha.slice(0, 7) }), "success");
       setMessage("");
       setFocus(undefined);
     }
   };
 
   const discard = async (path: string) => {
-    if (!confirm(`Discard all uncommitted changes to ${path}? This cannot be undone.`)) return;
+    if (!confirm(t("Discard all uncommitted changes to {path}? This cannot be undone.", { path }))) return;
     await runGit(() => api.post(p("git/discard/"), { path }), { reloadEditor: true });
   };
 
   const abort = async () => {
-    if (!confirm("Abort the merge and go back to how things were before it started?")) return;
+    if (!confirm(t("Abort the merge and go back to how things were before it started?"))) return;
     await runGit(() => api.post(p("git/merge/abort/")), { reloadEditor: true });
   };
 
-  if (!status) return <div className="pad muted">Loading…</div>;
+  if (!status) return <div className="pad muted">{t("Loading…")}</div>;
 
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2>Changes</h2>
+        <h2>{t("Changes")}</h2>
         <span className="muted">
-          on <strong>{status.branch}</strong>
+          {t("on")} <strong dir="ltr">{status.branch}</strong>
         </span>
       </div>
 
       {status.merging && (
         <div className="banner banner-warn">
           <div>
-            <strong>Merge in progress.</strong>{" "}
+            <strong>{t("Merge in progress.")}</strong>{" "}
             {conflicts.size > 0
-              ? `Resolve ${conflicts.size} conflicting file(s), then commit to finish the merge.`
-              : "All conflicts are resolved. Commit to finish the merge."}
+              ? t("Resolve {n} conflicting file(s), then commit to finish the merge.", { n: conflicts.size })
+              : t("All conflicts are resolved. Commit to finish the merge.")}
           </div>
           <button className="btn btn-sm" onClick={abort}>
-            Abort merge
+            {t("Abort merge")}
           </button>
         </div>
       )}
 
       {files.length === 0 ? (
         <div className="empty small-empty">
-          <h3>Everything is committed</h3>
-          <p className="muted">Edits you make will show up here. Commit them to save a version in the history.</p>
+          <h3>{t("Everything is committed")}</h3>
+          <p className="muted">{t("Edits you make will show up here. Commit them to save a version in the history.")}</p>
         </div>
       ) : (
         <div className="changes-layout">
@@ -110,11 +111,11 @@ export default function ChangesPanel({ initialPath }: { initialPath?: string }) 
                     checked={selected.size === files.length}
                     onChange={(e) => setSelected(e.target.checked ? new Set(files.map((f) => f.path)) : new Set())}
                   />
-                  <span className="small">All</span>
+                  <span className="small">{t("All")}</span>
                 </label>
               )}
               <button className={`link small ${!focus ? "strong" : ""}`} onClick={() => setFocus(undefined)}>
-                Show all diffs
+                {t("Show all diffs")}
               </button>
             </div>
             <ul className="plain-list">
@@ -123,23 +124,25 @@ export default function ChangesPanel({ initialPath }: { initialPath?: string }) 
                   {!status.merging && <input type="checkbox" checked={selected.has(f.path)} onChange={() => toggle(f.path)} />}
                   <button className="change-name" onClick={() => setFocus(f.path)} title={f.orig_path ? `${f.orig_path} → ${f.path}` : f.path}>
                     <span className={`git-mark git-${f.status}`}>{f.status[0].toUpperCase()}</span>
-                    <span className="mono small">{f.path}</span>
+                    <span className="mono small" dir="auto">
+                      {f.path}
+                    </span>
                   </button>
                   <span className="row tight">
                     {conflicts.has(f.path) ? (
                       <button className="btn btn-sm btn-primary" onClick={() => setView({ name: "conflict", path: f.path })}>
-                        Resolve
+                        {t("Resolve")}
                       </button>
                     ) : (
                       <>
                         {f.status !== "deleted" && (
                           <button className="link small" onClick={() => setView({ name: "editor", path: f.path })}>
-                            Open
+                            {t("Open")}
                           </button>
                         )}
                         {!status.merging && (
                           <button className="link small danger" onClick={() => discard(f.path)}>
-                            Discard
+                            {t("Discard")}
                           </button>
                         )}
                       </>
@@ -151,7 +154,8 @@ export default function ChangesPanel({ initialPath }: { initialPath?: string }) 
             <div className="commit-box">
               <textarea
                 rows={3}
-                placeholder="Describe what you changed, e.g. “Rewrite the opening of chapter 2”"
+                dir="auto"
+                placeholder={t("Describe what you changed, e.g. “Rewrite the opening of chapter 2”")}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={(e) => {
@@ -163,9 +167,9 @@ export default function ChangesPanel({ initialPath }: { initialPath?: string }) 
                 disabled={busy || !message.trim() || (!status.merging && selected.size === 0) || conflicts.size > 0}
                 onClick={commit}
               >
-                {status.merging ? "Commit merge" : `Commit ${selected.size} file${selected.size === 1 ? "" : "s"}`}
+                {status.merging ? t("Commit merge") : t("Commit {n} file(s)", { n: selected.size })}
               </button>
-              <small className="muted">Ctrl/⌘ + Enter to commit</small>
+              <small className="muted">{t("Ctrl/⌘ + Enter to commit")}</small>
             </div>
           </div>
           <div className="changes-diff">

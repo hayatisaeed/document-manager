@@ -7,26 +7,29 @@ export function dirname(path: string): string {
   return i === -1 ? "" : path.slice(0, i);
 }
 
-export function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
-  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)} d ago`;
-  return new Date(iso).toLocaleDateString();
-}
+export { relativeTime, fmtDate as formatDate, fmtNum } from "./prefs";
 
-export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString();
-}
-
-export const FORMAT_EXT: Record<string, string> = { markdown: ".md", latex: ".tex", html: ".html" };
-export const FORMAT_LABEL: Record<string, string> = { markdown: "Markdown", latex: "LaTeX", html: "Rich text" };
+export const FORMAT_EXT: Record<string, string> = { markdown: ".md", latex: ".tex", html: ".html", ipynb: ".ipynb" };
+export const FORMAT_LABEL: Record<string, string> = {
+  markdown: "Markdown",
+  latex: "LaTeX",
+  html: "Rich text",
+  ipynb: "Jupyter notebook",
+};
 export const STATUSES = ["idea", "outline", "draft", "revision", "final"];
+// i18n: idea|outline|draft|revision|final|Rich text|Jupyter notebook
 
+/** File-name friendly version of a title. Keeps Persian (and other) letters. */
 export function slugify(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "untitled";
+  return (
+    text
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\u200c]+/gu, "-")
+      .replace(/\u200c/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 60) || "untitled"
+  );
 }
 
 export function isImage(path: string) {

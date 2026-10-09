@@ -6,7 +6,7 @@ const backend = process.env.DM_BACKEND_URL ?? "http://127.0.0.1:8000";
 
 export default defineConfig({
   plugins: [react()],
-  build: { chunkSizeWarningLimit: 2000 },
+  build: { chunkSizeWarningLimit: 4000 },
   server: {
     port: 5173,
     proxy: { "/api": { target: backend, changeOrigin: true } },

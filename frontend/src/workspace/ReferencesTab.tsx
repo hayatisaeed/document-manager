@@ -4,6 +4,7 @@ import Modal from "../components/Modal";
 import { toast, toastError } from "../components/Toast";
 import type { Reference } from "../types";
 import { useWorkspace } from "./context";
+import { t } from "../i18n";
 
 export default function ReferencesTab() {
   const { p, editorRef, refreshStatus, view } = useWorkspace();
@@ -23,7 +24,7 @@ export default function ReferencesTab() {
   const cite = (keys: string[]) => {
     const ed = editorRef.current;
     if (!ed || view.name !== "editor" || !ed.format) {
-      toast("Open a chapter in the editor to insert a citation.");
+      toast(t("Open a chapter in the editor to insert a citation."));
       return;
     }
     ed.insertCitation(keys);
@@ -31,7 +32,7 @@ export default function ReferencesTab() {
   };
 
   const remove = async (key: string) => {
-    if (!confirm(`Delete reference ${key}?`)) return;
+    if (!confirm(t("Delete reference {key}?", { key }))) return;
     try {
       await api.del(p(`references/${encodeURIComponent(key)}/`));
       await load();
@@ -46,19 +47,19 @@ export default function ReferencesTab() {
   return (
     <div className="side-section">
       <div className="side-head">
-        <span>{refs.length} references</span>
+        <span>{t("{n} references", { n: refs.length })}</span>
         <button className="btn btn-sm" onClick={() => setDialog("add")}>
-          + Add
+          {t("+ Add")}
         </button>
       </div>
-      <input type="search" className="side-input" placeholder="Filter…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+      <input type="search" className="side-input" placeholder={t("Filter…")} dir="auto" value={filter} onChange={(e) => setFilter(e.target.value)} />
       {selected.length > 0 && (
         <div className="row pad">
           <button className="btn btn-sm btn-primary" onClick={() => cite(selected)}>
-            Cite {selected.length} selected
+            {t("Cite {n} selected", { n: selected.length })}
           </button>
           <button className="btn btn-sm" onClick={() => setSelected([])}>
-            Clear
+            {t("Clear")}
           </button>
         </div>
       )}
@@ -69,20 +70,22 @@ export default function ReferencesTab() {
               <input type="checkbox" checked={selected.includes(r.key)} onChange={() => toggle(r.key)} />
             </label>
             <div className="ref-body">
-              <div className="ref-title">{r.title || <em>Untitled</em>}</div>
-              <div className="muted small">
+              <div className="ref-title" dir="auto">
+                {r.title || <em>{t("Untitled")}</em>}
+              </div>
+              <div className="muted small" dir="auto">
                 {r.author} {r.year && `(${r.year})`} {r.container && `· ${r.container}`}
               </div>
               <div className="ref-actions">
-                <code>@{r.key}</code>
+                <code dir="ltr">@{r.key}</code>
                 <button className="link" onClick={() => cite([r.key])}>
-                  Cite
+                  {t("Cite")}
                 </button>
                 <button className="link" onClick={() => setDialog({ edit: r.key })}>
-                  Edit
+                  {t("Edit")}
                 </button>
                 <button className="link danger" onClick={() => remove(r.key)}>
-                  Delete
+                  {t("Delete")}
                 </button>
                 {r.doi && (
                   <a href={`https://doi.org/${r.doi}`} target="_blank" rel="noreferrer">
@@ -96,7 +99,7 @@ export default function ReferencesTab() {
       </ul>
       {refs.length === 0 && (
         <p className="muted pad small">
-          References live in <code>references.bib</code>. Paste BibTeX (for example, exported from Zotero, Mendeley or Google Scholar) or look one up by DOI.
+          {t("References live in references.bib. Paste BibTeX (for example, exported from Zotero, Mendeley or Google Scholar) or look one up by DOI.")}
         </p>
       )}
       {dialog && (
@@ -135,7 +138,7 @@ function RefDialog({ editKey, onClose, onSaved }: { editKey?: string; onClose: (
         await api.put(p(`references/${encodeURIComponent(editKey)}/`), { bibtex });
       } else {
         const res = await api.post<{ keys: string[] }>(p("references/"), doi.trim() ? { doi } : { bibtex });
-        toast(`Added ${res.keys.join(", ")}`, "success");
+        toast(t("Added {keys}", { keys: res.keys.join(", ") }), "success");
       }
       onSaved();
       onClose();
@@ -147,18 +150,19 @@ function RefDialog({ editKey, onClose, onSaved }: { editKey?: string; onClose: (
   };
 
   return (
-    <Modal title={editKey ? `Edit ${editKey}` : "Add references"} onClose={onClose} wide>
+    <Modal title={editKey ? t("Edit {key}", { key: editKey }) : t("Add references")} onClose={onClose} wide>
       <form className="form" onSubmit={submit}>
         {!editKey && (
           <label>
-            Look up by DOI
-            <input value={doi} onChange={(e) => setDoi(e.target.value)} placeholder="10.1038/nature14539" />
+            {t("Look up by DOI")}
+            <input dir="ltr" value={doi} onChange={(e) => setDoi(e.target.value)} placeholder="10.1038/nature14539" />
           </label>
         )}
         <label>
-          {editKey ? "BibTeX" : "…or paste BibTeX (one or more entries)"}
+          {editKey ? "BibTeX" : t("…or paste BibTeX (one or more entries)")}
           <textarea
             className="mono"
+            dir="ltr"
             rows={12}
             value={bibtex}
             disabled={!!doi.trim()}
@@ -168,10 +172,10 @@ function RefDialog({ editKey, onClose, onSaved }: { editKey?: string; onClose: (
         </label>
         <div className="row end">
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button className="btn btn-primary" disabled={busy || (!bibtex.trim() && !doi.trim())}>
-            {busy ? "Saving…" : "Save"}
+            {busy ? t("Saving…") : t("Save")}
           </button>
         </div>
       </form>

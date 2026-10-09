@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { toast, toastError } from "../components/Toast";
+import { t } from "../i18n";
+import { fmtNum } from "../prefs";
 import type { Stats } from "../types";
 import { basename } from "../util";
 import { useWorkspace } from "./context";
@@ -14,6 +16,7 @@ export default function ProjectPanel() {
     authors: manifest.authors.join(", "),
     kind: manifest.kind,
     description: manifest.description,
+    language: manifest.language ?? "auto",
   });
   const [stats, setStats] = useState<Stats | null>(null);
   const navigate = useNavigate();
@@ -27,20 +30,18 @@ export default function ProjectPanel() {
     try {
       await api.patch(p(""), {
         ...form,
-        authors: form.authors.split(",").map((a) => a.trim()).filter(Boolean),
+        authors: form.authors.split(/[,،]/).map((a) => a.trim()).filter(Boolean),
       });
       await refresh();
-      toast("Saved. Commit to share the change.", "success");
+      toast(t("Saved. Commit to share the change."), "success");
     } catch (err) {
       toastError(err);
     }
   };
 
   const remove = async () => {
-    const deleteFiles = confirm(
-      "Also delete the project's files from disk?\n\nOK = delete the files too\nCancel = only remove it from the app (files stay in the projects folder)",
-    );
-    if (!confirm(deleteFiles ? "Permanently delete this project and all its files?" : "Remove this project from the app?")) return;
+    const deleteFiles = confirm(t("Also delete the project's files from disk?\n\nOK = delete the files too\nCancel = only remove it from the app (files stay in the projects folder)"));
+    if (!confirm(deleteFiles ? t("Permanently delete this project and all its files?") : t("Remove this project from the app?"))) return;
     await api.del(p("") + (deleteFiles ? "?delete_files=true" : "")).catch(toastError);
     navigate("/");
   };
@@ -50,68 +51,80 @@ export default function ProjectPanel() {
   return (
     <div className="panel narrow-panel">
       <div className="panel-head">
-        <h2>Project</h2>
+        <h2>{t("Project")}</h2>
       </div>
       <form className="form" onSubmit={save}>
         <label>
-          Title
-          <input value={form.title} onChange={set("title")} />
+          {t("Title")}
+          <input dir="auto" value={form.title} onChange={set("title")} />
         </label>
         <label>
-          Subtitle
-          <input value={form.subtitle} onChange={set("subtitle")} />
+          {t("Subtitle")}
+          <input dir="auto" value={form.subtitle} onChange={set("subtitle")} />
         </label>
         <label>
-          Authors (comma-separated)
-          <input value={form.authors} onChange={set("authors")} />
+          {t("Authors (comma-separated)")}
+          <input dir="auto" value={form.authors} onChange={set("authors")} />
         </label>
         <label>
-          Type
+          {t("Type")}
           <select value={form.kind} onChange={set("kind")}>
-            <option value="book">Book</option>
-            <option value="research">Research paper / thesis</option>
-            <option value="notes">Notes / other</option>
+            <option value="book">{t("Book")}</option>
+            <option value="research">{t("Research paper / thesis")}</option>
+            <option value="notes">{t("Notes / other")}</option>
           </select>
         </label>
         <label>
-          Description
-          <textarea rows={3} value={form.description} onChange={set("description")} />
+          {t("Main language of the document")}
+          <select value={form.language} onChange={set("language")}>
+            <option value="auto">{t("Detect automatically")}</option>
+            <option value="fa">{t("Persian (right-to-left)")}</option>
+            <option value="en">{t("English (left-to-right)")}</option>
+          </select>
+          <small className="muted">
+            {t("Sets the page direction and the typography of exports. Paragraphs in the other language are detected and laid out correctly either way.")}
+          </small>
+        </label>
+        <label>
+          {t("Description")}
+          <textarea rows={3} dir="auto" value={form.description} onChange={set("description")} />
         </label>
         <div className="row end">
-          <button className="btn btn-primary">Save</button>
+          <button className="btn btn-primary">{t("Save")}</button>
         </div>
       </form>
 
       {stats && (
         <>
-          <h3>Progress</h3>
+          <h3>{t("Progress")}</h3>
           <p>
-            <strong>{stats.total_words.toLocaleString()}</strong> words
-            {stats.target_words > 0 && ` of ${stats.target_words.toLocaleString()} target (${Math.round((100 * stats.total_words) / stats.target_words)}%)`}
+            <strong>{fmtNum(stats.total_words)}</strong> {t("words")}
+            {stats.target_words > 0 &&
+              ` ${t("of {target} target ({pct}%)", { target: stats.target_words, pct: Math.round((100 * stats.total_words) / stats.target_words) })}`}
           </p>
           <table className="table">
             <thead>
               <tr>
-                <th>Chapter</th>
-                <th>Status</th>
-                <th>Words</th>
-                <th>Progress</th>
+                <th>{t("Chapter")}</th>
+                <th>{t("Status")}</th>
+                <th>{t("Words")}</th>
+                <th>{t("Progress")}</th>
               </tr>
             </thead>
             <tbody>
               {stats.chapters.map((c) => (
                 <tr key={c.path}>
                   <td>
-                    <button className="link" onClick={() => setView({ name: "editor", path: c.path })}>
+                    <button className="link" dir="auto" onClick={() => setView({ name: "editor", path: c.path })}>
                       {manifest.files[c.path]?.title ?? basename(c.path)}
                     </button>
                   </td>
                   <td>
-                    <span className={`status-chip status-${c.status}`}>{c.status}</span>
+                    <span className={`status-chip status-${c.status}`}>{t(c.status)}</span>
                   </td>
                   <td>
-                    {c.words.toLocaleString()}
-                    {c.target_words ? ` / ${c.target_words.toLocaleString()}` : ""}
+                    {fmtNum(c.words)}
+                    {c.target_words ? ` / ${fmtNum(c.target_words)}` : ""}
                   </td>
                   <td style={{ width: "30%" }}>
                     {c.target_words > 0 && (
@@ -127,12 +140,15 @@ export default function ProjectPanel() {
         </>
       )}
 
-      <h3>Danger zone</h3>
+      <h3>{t("Danger zone")}</h3>
       <p className="muted small">
-        Folder: <span className="mono">{slug}</span>
+        {t("Folder")}:{" "}
+        <span className="mono" dir="ltr">
+          {slug}
+        </span>
       </p>
       <button className="btn btn-danger" onClick={remove}>
-        Remove project…
+        {t("Remove project…")}
       </button>
     </div>
   );

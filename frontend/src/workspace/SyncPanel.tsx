@@ -4,6 +4,7 @@ import { api } from "../api";
 import { toast } from "../components/Toast";
 import type { Remote } from "../types";
 import { useWorkspace } from "./context";
+import { t } from "../i18n";
 
 export default function SyncPanel() {
   const { p, runGit, status, setView } = useWorkspace();
@@ -28,12 +29,12 @@ export default function SyncPanel() {
       setRemotes(res);
       setRemote(name.trim());
       setUrl("");
-      toast("Remote saved", "success");
+      toast(t("Remote saved"), "success");
     }
   };
 
   const removeRemote = async (n: string) => {
-    if (!confirm(`Remove remote ${n}? Nothing on the server is deleted.`)) return;
+    if (!confirm(t("Remove remote {name}? Nothing on the server is deleted.", { name: n }))) return;
     const res = await runGit(() => api.del<Remote[]>(p(`git/remotes/${encodeURIComponent(n)}/`)));
     if (res) setRemotes(res);
   };
@@ -46,12 +47,12 @@ export default function SyncPanel() {
     );
     setBusy(null);
     if (!res) return;
-    setLog(res.message || "Done.");
+    setLog(res.message || t("Done."));
     if (res.conflicts?.length) {
-      toast(`Pulled with ${res.conflicts.length} conflict(s). Resolve them to finish.`, "error");
+      toast(t("Pulled with {n} conflict(s). Resolve them to finish.", { n: res.conflicts.length }), "error");
       setView({ name: "changes" });
     } else {
-      toast(kind === "push" ? "Pushed" : kind === "pull" ? "Up to date with remote" : "Fetched", "success");
+      toast(kind === "push" ? t("Pushed") : kind === "pull" ? t("Up to date with remote") : t("Fetched"), "success");
     }
   };
 
@@ -60,21 +61,21 @@ export default function SyncPanel() {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2>Sync &amp; collaborate</h2>
+        <h2>{t("Sync & collaborate")}</h2>
       </div>
 
       {remotes.length === 0 ? (
         <div className="banner banner-info">
           <div>
-            <strong>Share this project with a collaborator</strong>
+            <strong>{t("Share this project with a collaborator")}</strong>
             <ol className="steps">
-              <li>Create an empty private repository on GitHub or GitLab (no README).</li>
+              <li>{t("Create an empty private repository on GitHub or GitLab (no README).")}</li>
               <li>
-                Add a personal access token for the host in <Link to="/settings">Settings</Link>.
+                {t("Add a personal access token for the host in")} <Link to="/settings">{t("Settings")}</Link>.
               </li>
-              <li>Paste the repository URL below and press Push.</li>
-              <li>Invite your collaborator to the repository. They choose “Clone from remote” in their own Document Manager.</li>
-              <li>From then on, Pull to get their work and Push to send yours.</li>
+              <li>{t("Paste the repository URL below and press Push.")}</li>
+              <li>{t("Invite your collaborator to the repository. They choose “Clone from remote” in their own Document Manager.")}</li>
+              <li>{t("From then on, Pull to get their work and Push to send yours.")}</li>
             </ol>
           </div>
         </div>
@@ -82,53 +83,60 @@ export default function SyncPanel() {
         <div className="sync-box">
           <div className="row">
             <label className="inline-label">
-              Remote
-              <select value={remote} onChange={(e) => setRemote(e.target.value)}>
+              {t("Remote")}
+              <select dir="ltr" value={remote} onChange={(e) => setRemote(e.target.value)}>
                 {remotes.map((r) => (
                   <option key={r.name}>{r.name}</option>
                 ))}
               </select>
             </label>
             <span className="muted">
-              Branch <strong>{status?.branch}</strong>
+              {t("Branch")} <strong dir="ltr">{status?.branch}</strong>
               {status?.upstream ? (
                 <>
                   {" "}
-                  · {status.ahead} to push, {status.behind} to pull <span className="small">(as of last fetch)</span>
+                  · {t("{ahead} to push, {behind} to pull", { ahead: status.ahead, behind: status.behind })}{" "}
+                  <span className="small">{t("(as of last fetch)")}</span>
                 </>
               ) : (
-                " · not pushed yet"
+                ` · ${t("not pushed yet")}`
               )}
             </span>
           </div>
           <div className="row">
             <button className="btn" disabled={!!busy} onClick={() => op("fetch")}>
-              {busy === "fetch" ? "Fetching…" : "Fetch"}
+              {busy === "fetch" ? t("Fetching…") : t("Fetch")}
             </button>
             <button className="btn" disabled={!!busy} onClick={() => op("pull")}>
-              {busy === "pull" ? "Pulling…" : "Pull"}
+              {busy === "pull" ? t("Pulling…") : t("Pull")}
             </button>
             <button className="btn btn-primary" disabled={!!busy} onClick={() => op("push")}>
-              {busy === "push" ? "Pushing…" : "Push"}
+              {busy === "push" ? t("Pushing…") : t("Push")}
             </button>
           </div>
-          {dirty && <p className="muted small">You have uncommitted changes. Commit them first so they are included when you push.</p>}
-          {log && <pre className="git-output">{log}</pre>}
+          {dirty && <p className="muted small">{t("You have uncommitted changes. Commit them first so they are included when you push.")}</p>}
+          {log && (
+            <pre className="git-output" dir="ltr">
+              {log}
+            </pre>
+          )}
         </div>
       )}
 
-      <h3>Remotes</h3>
+      <h3>{t("Remotes")}</h3>
       <table className="table">
         <tbody>
           {remotes.map((r) => (
             <tr key={r.name}>
               <td>
-                <strong>{r.name}</strong>
+                <strong dir="ltr">{r.name}</strong>
               </td>
-              <td className="mono small">{r.url}</td>
+              <td className="mono small" dir="ltr">
+                {r.url}
+              </td>
               <td className="actions">
                 <button className="btn btn-sm btn-danger" onClick={() => removeRemote(r.name)}>
-                  Remove
+                  {t("Remove")}
                 </button>
               </td>
             </tr>
@@ -137,16 +145,16 @@ export default function SyncPanel() {
       </table>
       <form className="form grid3" onSubmit={addRemote}>
         <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} />
+          {t("Name")}
+          <input dir="ltr" value={name} onChange={(e) => setName(e.target.value)} />
         </label>
         <label className="span2">
-          URL
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/you/project.git" />
+          {t("URL")}
+          <input dir="ltr" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/you/project.git" />
         </label>
         <div className="row end span3">
           <button className="btn" disabled={!name.trim() || !url.trim()}>
-            {remotes.some((r) => r.name === name.trim()) ? "Update remote URL" : "Add remote"}
+            {remotes.some((r) => r.name === name.trim()) ? t("Update remote URL") : t("Add remote")}
           </button>
         </div>
       </form>

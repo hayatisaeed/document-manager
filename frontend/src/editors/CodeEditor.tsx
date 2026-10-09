@@ -1,8 +1,14 @@
 import { useMemo } from "react";
-import CodeMirror, { EditorView, ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import CodeMirror, { Decoration, EditorView, keymap, ReactCodeMirrorRef, ViewPlugin, type DecorationSet, type ViewUpdate } from "@uiw/react-codemirror";
+import { Prec, RangeSetBuilder } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
+import { python } from "@codemirror/lang-python";
+import { languages } from "@codemirror/language-data";
 import { StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
+import { usePrefs } from "../prefs";
+
+export const ZWNJ = "‌";
 
 /** Insert text at the cursor (replacing the selection) and focus the editor. */
 export function insertAtCursor(view: EditorView | undefined, text: string) {
@@ -24,13 +30,48 @@ export function wrapSelection(view: EditorView | undefined, before: string, afte
   view.focus();
 }
 
-const prefersDark = () => {
-  try {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  } catch {
-    return false;
-  }
-};
+/**
+ * Give every line dir="auto" so Persian lines run right-to-left and English
+ * lines left-to-right, each following its first strong character. Combined with
+ * perLineTextDirection, cursor movement and selection follow the same direction.
+ */
+const autoDirLine = Decoration.line({ attributes: { dir: "auto" } });
+const lineDirection = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = this.build(view);
+    }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.viewportChanged) this.decorations = this.build(u.view);
+    }
+    build(view: EditorView) {
+      const builder = new RangeSetBuilder<Decoration>();
+      for (const { from, to } of view.visibleRanges) {
+        for (let pos = from; pos <= to; ) {
+          const line = view.state.doc.lineAt(pos);
+          builder.add(line.from, line.from, autoDirLine);
+          pos = line.to + 1;
+        }
+      }
+      return builder.finish();
+    }
+  },
+  { decorations: (v) => v.decorations },
+);
+
+const persianKeys = Prec.highest(keymap.of([
+  {
+    // Ctrl/Cmd+Shift+2 inserts a half-space (ZWNJ), as in Microsoft Word.
+    key: "Mod-Shift-2",
+    run: (view) => {
+      insertAtCursor(view, ZWNJ);
+      return true;
+    },
+  },
+]));
+
+export type CodeLanguage = "markdown" | "latex" | "python" | "text";
 
 export default function CodeEditor({
   value,
@@ -38,31 +79,46 @@ export default function CodeEditor({
   language,
   editorRef,
   readOnly,
+  minimal,
+  extraKeys,
 }: {
   value: string;
   onChange?: (v: string) => void;
-  language: "markdown" | "latex" | "text";
+  language: CodeLanguage;
   editorRef?: React.Ref<ReactCodeMirrorRef>;
   readOnly?: boolean;
+  /** Compact mode for notebook cells: no line numbers, grows with content. */
+  minimal?: boolean;
+  extraKeys?: Parameters<typeof keymap.of>[0];
 }) {
+  const { dark } = usePrefs();
   const extensions = useMemo(() => {
-    const ext = [EditorView.lineWrapping];
-    if (language === "markdown") ext.push(markdown());
+    const ext = [EditorView.lineWrapping, EditorView.perLineTextDirection.of(true), lineDirection, persianKeys];
+    // Highest precedence: the default keymap would otherwise turn Shift+Enter into a newline.
+    if (extraKeys) ext.unshift(Prec.highest(keymap.of(extraKeys)));
+    // Fenced code blocks inside Markdown are highlighted in their own language.
+    if (language === "markdown") ext.push(markdown({ codeLanguages: languages }));
     if (language === "latex") ext.push(StreamLanguage.define(stex));
+    if (language === "python") ext.push(python());
     return ext;
-  }, [language]);
+  }, [language, extraKeys]);
 
   return (
     <CodeMirror
       ref={editorRef}
-      className="code-editor"
+      className={`code-editor lang-${language} ${minimal ? "code-editor-minimal" : ""}`}
       value={value}
       onChange={onChange}
       extensions={extensions}
       readOnly={readOnly}
-      theme={prefersDark() ? "dark" : "light"}
-      basicSetup={{ foldGutter: false, highlightActiveLineGutter: false }}
-      height="100%"
+      theme={dark ? "dark" : "light"}
+      basicSetup={{
+        foldGutter: false,
+        highlightActiveLineGutter: false,
+        lineNumbers: !minimal,
+        highlightActiveLine: !minimal,
+      }}
+      height={minimal ? "auto" : "100%"}
     />
   );
 }

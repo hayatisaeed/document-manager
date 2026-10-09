@@ -201,13 +201,19 @@ def latex_header(lang: str, has_rtl: bool, theme: str) -> str:
     if theme == "dark":
         lines += [r"\pagecolor[HTML]{171B21}", r"\color[HTML]{E3E7EC}"]
     if has_rtl:
+        # Latin fonts fall back to Vazirmatn for Persian characters (e.g. strings in code).
+        fallback_font = (_fonts_dir() / "Vazirmatn-Regular.ttf").resolve().as_posix()
+        lines.append(r"\directlua{luaotfload.add_fallback('dmpersian', {'[" + fallback_font + r"]:mode=harf;'})}")
+        latin = "[RawFeature={fallback=dmpersian}]"
         if lang == "fa":
-            lines += [r"\babelfont{rm}" + vaz, r"\babelfont{sf}" + vaz, r"\babelfont{tt}" + vaz,
-                      r"\babelfont[english]{rm}{Latin Modern Roman}",
-                      r"\babelfont[english]{sf}{Latin Modern Sans}",
-                      r"\babelfont[english]{tt}{Latin Modern Mono}"]
+            lines += [r"\babelfont{rm}" + vaz, r"\babelfont{sf}" + vaz,
+                      r"\babelfont{tt}" + latin + "{Latin Modern Mono}",
+                      r"\babelfont[english]{rm}" + latin + "{Latin Modern Roman}",
+                      r"\babelfont[english]{sf}" + latin + "{Latin Modern Sans}",
+                      r"\babelfont[english]{tt}" + latin + "{Latin Modern Mono}"]
         else:
-            lines += [r"\babelfont[persian]{rm}" + vaz, r"\babelfont[persian]{sf}" + vaz,
+            lines += [r"\babelfont{tt}" + latin + "{Latin Modern Mono}",
+                      r"\babelfont[persian]{rm}" + vaz, r"\babelfont[persian]{sf}" + vaz,
                       r"\babelfont[persian]{tt}" + vaz]
     # pandoc only defines these for pdfLaTeX; with babel's bidi=basic (LuaLaTeX)
     # the language switch already sets the direction.
@@ -307,6 +313,8 @@ def export(root: Path, fmt: str, paths: list[str] | None = None, theme: str | No
     if export_cfg.get("number_sections"):
         args.append("--number-sections")
 
+    if fmt == "latex" and has_rtl:
+        args += ["-V", "babeloptions=provide=*", "-V", "babeloptions=layout=graphics"]
     if fmt in ("pdf", "latex"):
         header = build / "header.tex"
         header.write_text(latex_header(lang, has_rtl, theme), encoding="utf-8")
@@ -325,6 +333,10 @@ def export(root: Path, fmt: str, paths: list[str] | None = None, theme: str | No
             preferred = export_cfg.get("pdf_engine")
             engine = preferred if preferred in engines else engines[0]
         args += [f"--pdf-engine={engine}", "-V", "geometry:margin=1in"]
+        if has_rtl:
+            # Keep pandoc's default and add layout=graphics: TikZ-based boxes (callouts)
+            # are otherwise mirrored off the page in right-to-left text.
+            args += ["-V", "babeloptions=provide=*", "-V", "babeloptions=layout=graphics"]
     if fmt in ("html", "epub"):
         args.append("--mathml")
         css_file = build / f"export-{theme}.css"
@@ -341,8 +353,21 @@ def export(root: Path, fmt: str, paths: list[str] | None = None, theme: str | No
     return output
 
 
+def version() -> tuple[int, ...] | None:
+    exe = pandoc_bin()
+    if not exe:
+        return None
+    try:
+        out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=20).stdout.split()
+        return tuple(int(x) for x in out[1].split("."))
+    except (OSError, subprocess.SubprocessError, IndexError, ValueError):
+        return None
+
+
 def capabilities() -> dict:
     from . import kernels  # local import: optional dependency
-    return {"pandoc": available(), "pdf_engines": pdf_engines(),
+    v = version()
+    return {"pandoc": available(), "pandoc_version": ".".join(map(str, v)) if v else None,
+            "pandoc_outdated": bool(v and v < (3, 6)), "pdf_engines": pdf_engines(),
             "formats": list(EXPORT_FORMATS), "git": shutil.which("git") is not None,
             "jupyter": kernels.available()}

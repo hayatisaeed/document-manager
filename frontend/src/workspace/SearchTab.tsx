@@ -2,6 +2,8 @@ import { FormEvent, useState } from "react";
 import { api, qs } from "../api";
 import { toastError } from "../components/Toast";
 import { useWorkspace } from "./context";
+import { t } from "../i18n";
+import { fmtNum } from "../prefs";
 
 interface Hit {
   path: string;
@@ -27,18 +29,21 @@ export default function SearchTab() {
   return (
     <div className="side-section">
       <form onSubmit={submit} className="search-form">
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search all files…" autoFocus />
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("Search all files…")} dir="auto" autoFocus />
       </form>
-      {grouped && Object.keys(grouped).length === 0 && <p className="muted pad">No matches.</p>}
+      {grouped && Object.keys(grouped).length === 0 && <p className="muted pad">{t("No matches.")}</p>}
       {grouped &&
         Object.entries(grouped).map(([path, list]) => (
           <div key={path} className="search-group">
             <button className="search-file" onClick={() => openFile(path)}>
-              {path} <span className="muted">({list.length})</span>
+              <span dir="auto">{path}</span> <span className="muted">({fmtNum(list.length)})</span>
             </button>
             {list.slice(0, 8).map((h) => (
               <button key={h.line} className="search-hit" onClick={() => openFile(path)}>
-                <span className="ln">{h.line}</span> <Highlight text={h.snippet} q={q} />
+                <span className="ln">{fmtNum(h.line)}</span>{" "}
+                <span dir="auto">
+                  <Highlight text={h.snippet} q={q} />
+                </span>
               </button>
             ))}
           </div>

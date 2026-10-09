@@ -1,4 +1,4 @@
-export type DocFormat = "markdown" | "latex" | "html";
+export type DocFormat = "markdown" | "latex" | "html" | "ipynb";
 
 export interface FileMeta {
   title?: string;
@@ -13,9 +13,10 @@ export interface Manifest {
   authors: string[];
   kind: string;
   description: string;
+  language: "auto" | "en" | "fa";
   manuscript: string[];
   files: Record<string, FileMeta>;
-  export: { toc: boolean; number_sections: boolean; pdf_engine: string; csl: string };
+  export: { toc: boolean; number_sections: boolean; pdf_engine: string; csl: string; theme: "light" | "dark" };
 }
 
 export interface ProjectSummary {
@@ -121,14 +122,20 @@ export interface Stats {
 
 export interface Capabilities {
   pandoc: boolean;
+  pandoc_version: string | null;
+  pandoc_outdated: boolean;
   pdf_engines: string[];
   formats: string[];
   git: boolean;
+  jupyter: boolean;
 }
 
 export interface AppSettings {
   author_name: string;
   author_email: string;
+  ui_language: string;
+  theme: string;
+  calendar: string;
   capabilities: Capabilities;
   projects_dir: string;
 }
@@ -138,4 +145,33 @@ export interface Credential {
   host: string;
   username: string;
   token_preview: string;
+}
+
+export interface NotebookOutput {
+  output_type: "stream" | "display_data" | "execute_result" | "error";
+  name?: string;
+  text?: string | string[];
+  data?: Record<string, string | string[]>;
+  metadata?: Record<string, unknown>;
+  execution_count?: number | null;
+  ename?: string;
+  evalue?: string;
+  traceback?: string[];
+}
+
+export interface NotebookCell {
+  cell_type: "code" | "markdown" | "raw";
+  source: string | string[];
+  metadata: Record<string, unknown>;
+  outputs?: NotebookOutput[];
+  execution_count?: number | null;
+  id?: string;
+  attachments?: unknown;
+}
+
+export interface Notebook {
+  cells: NotebookCell[];
+  metadata: Record<string, unknown>;
+  nbformat: number;
+  nbformat_minor: number;
 }

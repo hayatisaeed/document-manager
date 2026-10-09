@@ -13,6 +13,9 @@ import SyncPanel from "../workspace/SyncPanel";
 import ExportPanel from "../workspace/ExportPanel";
 import ProjectPanel from "../workspace/ProjectPanel";
 import ConflictPanel from "../workspace/ConflictPanel";
+import PrefsToggles from "../components/PrefsToggles";
+import { t } from "../i18n";
+import { fmtNum } from "../prefs";
 
 export default function Workspace() {
   const { slug = "" } = useParams();
@@ -99,13 +102,13 @@ export default function Workspace() {
   if (error) {
     return (
       <div className="page">
-        <h1>Could not open project</h1>
+        <h1>{t("Could not open project")}</h1>
         <p className="error-text">{error}</p>
-        <Link to="/">← Projects</Link>
+        <Link to="/">{t("← Projects")}</Link>
       </div>
     );
   }
-  if (!project || !manifest) return <div className="page muted">Loading…</div>;
+  if (!project || !manifest) return <div className="page muted">{t("Loading…")}</div>;
 
   const ctx: WorkspaceCtx = {
     slug, p, project, manifest, saveManifest, tree, status, view, setView,
@@ -120,47 +123,49 @@ export default function Workspace() {
     <WorkspaceContext.Provider value={ctx}>
       <div className="ws">
         <header className="ws-top">
-          <Link to="/" className="ws-home" title="All projects">
+          <Link to="/" className="ws-home" title={t("All projects")}>
             ◧
           </Link>
           <div className="ws-title">
-            <strong>{manifest.title}</strong>
-            <button className="branch-pill" onClick={() => setView({ name: "branches" })} title="Branches">
+            <strong dir="auto">{manifest.title}</strong>
+            <button className="branch-pill" dir="ltr" onClick={() => setView({ name: "branches" })} title={t("Branches")}>
               ⎇ {status?.branch ?? "…"}
             </button>
           </div>
           <nav className="ws-nav">
             <button className={is("changes")} onClick={() => setView({ name: "changes" })}>
-              Changes {changes > 0 && <span className="count">{changes}</span>}
+              {t("Changes")} {changes > 0 && <span className="count">{fmtNum(changes)}</span>}
             </button>
             <button className={is("history")} onClick={() => setView({ name: "history" })}>
-              History
+              {t("History")}
             </button>
             <button className={is("branches")} onClick={() => setView({ name: "branches" })}>
-              Branches
+              {t("Branches")}
             </button>
             <button className={is("sync")} onClick={() => setView({ name: "sync" })}>
-              Sync
+              {t("Sync")}
               {status && (status.ahead > 0 || status.behind > 0) && (
-                <span className="count">
-                  ↑{status.ahead} ↓{status.behind}
+                <span className="count" dir="ltr">
+                  ↑{fmtNum(status.ahead)} ↓{fmtNum(status.behind)}
                 </span>
               )}
             </button>
             <button className={is("export")} onClick={() => setView({ name: "export" })}>
-              Export
+              {t("Export")}
             </button>
             <button className={is("project")} onClick={() => setView({ name: "project" })}>
-              Project
+              {t("Project")}
             </button>
           </nav>
+          <PrefsToggles />
         </header>
         {status?.merging && view.name !== "changes" && view.name !== "conflict" && (
           <div className="banner banner-warn">
-            A merge is in progress
-            {status.conflicts.length > 0 ? ` with ${status.conflicts.length} conflicting file(s)` : ""}.{" "}
+            {status.conflicts.length > 0
+              ? t("A merge is in progress with {n} conflicting file(s).", { n: status.conflicts.length })
+              : t("A merge is in progress.")}{" "}
             <button className="link" onClick={() => setView({ name: "changes" })}>
-              Resolve and finish the merge →
+              {t("Resolve and finish the merge →")}
             </button>
           </div>
         )}
@@ -196,8 +201,8 @@ function MainView({ view, reloadKey }: { view: View; reloadKey: number }) {
     default:
       return (
         <div className="empty">
-          <h2>Pick a chapter or file</h2>
-          <p className="muted">Choose something from the sidebar, or add a chapter to the manuscript.</p>
+          <h2>{t("Pick a chapter or file")}</h2>
+          <p className="muted">{t("Choose something from the sidebar, or add a chapter to the manuscript.")}</p>
         </div>
       );
   }

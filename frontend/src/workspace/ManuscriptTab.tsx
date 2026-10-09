@@ -5,6 +5,8 @@ import { toastError } from "../components/Toast";
 import type { Stats } from "../types";
 import { basename, FORMAT_EXT, slugify } from "../util";
 import { useWorkspace } from "./context";
+import { t } from "../i18n";
+import { fmtNum } from "../prefs";
 
 export default function ManuscriptTab() {
   const { manifest, saveManifest, view, openFile, p, status, runGit, reloadKey } = useWorkspace();
@@ -30,12 +32,12 @@ export default function ManuscriptTab() {
   };
 
   const remove = (path: string) => {
-    if (!confirm(`Remove “${title(path)}” from the manuscript? The file stays in the project.`)) return;
+    if (!confirm(t("Remove “{title}” from the manuscript? The file stays in the project.", { title: title(path) }))) return;
     saveManifest({ manuscript: manifest.manuscript.filter((x) => x !== path) }).catch(toastError);
   };
 
   const del = (path: string) => {
-    if (!confirm(`Delete ${path}? You can still recover it from History until you commit.`)) return;
+    if (!confirm(t("Delete {path}? You can still recover it from History until you commit.", { path }))) return;
     runGit(() => api.del(p(`file/?path=${encodeURIComponent(path)}`)), { reloadEditor: true });
   };
 
@@ -47,14 +49,14 @@ export default function ManuscriptTab() {
     <div className="side-section">
       <div className="side-head">
         <span>
-          {manifest.manuscript.length} chapter{manifest.manuscript.length === 1 ? "" : "s"} · {total.toLocaleString()} words
+          {t("{n} chapters", { n: manifest.manuscript.length })} · {t("{n} words", { n: total })}
         </span>
         <button className="btn btn-sm" onClick={() => setAdding(true)}>
-          + Chapter
+          {t("+ Chapter")}
         </button>
       </div>
       {target > 0 && (
-        <div className="progress" title={`${total} / ${target} words`}>
+        <div className="progress" title={`${fmtNum(total)} / ${fmtNum(target)}`}>
           <div style={{ width: `${Math.min(100, (100 * total) / target)}%` }} />
         </div>
       )}
@@ -86,29 +88,29 @@ export default function ManuscriptTab() {
                 <span className="drag-handle" aria-hidden>
                   ⋮⋮
                 </span>
-                <span className="chapter-num">{i + 1}.</span>
-                <span className="chapter-title">
+                <span className="chapter-num">{fmtNum(i + 1)}.</span>
+                <span className="chapter-title" dir="auto">
                   {title(path)}
-                  {changed.has(path) && <span className="dot-changed" title="Uncommitted changes" />}
+                  {changed.has(path) && <span className="dot-changed" title={t("Uncommitted changes")} />}
                 </span>
-                <span className={`status-chip status-${meta.status ?? "draft"}`}>{meta.status ?? "draft"}</span>
+                <span className={`status-chip status-${meta.status ?? "draft"}`}>{t(meta.status ?? "draft")}</span>
               </button>
               <div className="chapter-meta">
                 <span className="muted">
-                  {words(path)?.toLocaleString() ?? "…"}
-                  {meta.target_words ? ` / ${meta.target_words.toLocaleString()}` : ""} words
+                  {words(path) === undefined ? "…" : fmtNum(words(path)!)}
+                  {meta.target_words ? ` / ${fmtNum(meta.target_words)}` : ""} {t("words")}
                 </span>
                 <span className="chapter-actions">
-                  <button className="link" disabled={i === 0} onClick={() => move(i, i - 1)} aria-label="Move up">
+                  <button className="link" disabled={i === 0} onClick={() => move(i, i - 1)} aria-label={t("Move up")}>
                     ↑
                   </button>
-                  <button className="link" disabled={i === manifest.manuscript.length - 1} onClick={() => move(i, i + 1)} aria-label="Move down">
+                  <button className="link" disabled={i === manifest.manuscript.length - 1} onClick={() => move(i, i + 1)} aria-label={t("Move down")}>
                     ↓
                   </button>
-                  <button className="link" onClick={() => remove(path)} title="Remove from manuscript">
+                  <button className="link" onClick={() => remove(path)} title={t("Remove from manuscript")}>
                     ⊖
                   </button>
-                  <button className="link danger" onClick={() => del(path)} title="Delete file">
+                  <button className="link danger" onClick={() => del(path)} title={t("Delete file")}>
                     🗑
                   </button>
                 </span>
@@ -117,7 +119,7 @@ export default function ManuscriptTab() {
           );
         })}
       </ol>
-      {manifest.manuscript.length === 0 && <p className="muted pad">No chapters yet.</p>}
+      {manifest.manuscript.length === 0 && <p className="muted pad">{t("No chapters yet.")}</p>}
       {adding && <AddChapter onClose={() => setAdding(false)} />}
     </div>
   );
@@ -128,7 +130,7 @@ function AddChapter({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState("");
   const lastFormat = (() => {
     const last = manifest.manuscript[manifest.manuscript.length - 1] ?? "";
-    return last.endsWith(".tex") ? "latex" : last.endsWith(".html") ? "html" : "markdown";
+    return last.endsWith(".tex") ? "latex" : last.endsWith(".html") ? "html" : last.endsWith(".ipynb") ? "ipynb" : "markdown";
   })();
   const [format, setFormat] = useState(lastFormat);
   const [existing, setExisting] = useState("");
@@ -155,23 +157,24 @@ function AddChapter({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal title="Add chapter" onClose={onClose}>
+    <Modal title={t("Add chapter")} onClose={onClose}>
       <form className="form" onSubmit={submit}>
         <label>
-          Title
-          <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} disabled={!!existing} placeholder="Chapter title" />
+          {t("Title")}
+          <input autoFocus dir="auto" value={title} onChange={(e) => setTitle(e.target.value)} disabled={!!existing} placeholder={t("Chapter title")} />
         </label>
         <label>
-          Format
+          {t("Format")}
           <select value={format} onChange={(e) => setFormat(e.target.value)} disabled={!!existing}>
             <option value="markdown">Markdown</option>
             <option value="latex">LaTeX</option>
-            <option value="html">Rich text</option>
+            <option value="html">{t("Rich text")}</option>
+            <option value="ipynb">{t("Jupyter notebook")}</option>
           </select>
         </label>
         {docs.length > 0 && (
           <label>
-            …or add an existing document
+            {t("…or add an existing document")}
             <select value={existing} onChange={(e) => setExisting(e.target.value)}>
               <option value="">—</option>
               {docs.map((d) => (
@@ -184,10 +187,10 @@ function AddChapter({ onClose }: { onClose: () => void }) {
         )}
         <div className="row end">
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button className="btn btn-primary" disabled={!existing && !title.trim()}>
-            Add
+            {t("Add")}
           </button>
         </div>
       </form>

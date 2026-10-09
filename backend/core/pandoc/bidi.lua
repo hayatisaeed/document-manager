@@ -111,7 +111,14 @@ local function process_blocks(blocks, parent_dir, in_list)
       local d = block.attributes.dir
       block.content = process_blocks(block.content, d)
       out:insert(block)
-    elseif block.t == 'CodeBlock' or block.t == 'RawBlock' or block.t == 'HorizontalRule' then
+    elseif block.t == 'CodeBlock' then
+      -- Code is always left-to-right, even inside a Persian document.
+      if parent_dir == 'rtl' then
+        out:insert(pandoc.Div({block}, pandoc.Attr('', {}, {{'dir', 'ltr'}, {'lang', LTR_LANG}})))
+      else
+        out:insert(block)
+      end
+    elseif block.t == 'RawBlock' or block.t == 'HorizontalRule' then
       out:insert(block)
     else
       local d = block_dir(block)
