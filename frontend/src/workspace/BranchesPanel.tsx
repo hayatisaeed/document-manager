@@ -38,8 +38,9 @@ export default function BranchesPanel() {
 
   const merge = async (branch: string) => {
     if (!confirm(t("Merge {branch} into {current}?", { branch, current: branches?.current ?? "" }))) return;
-    const res = await runGit(() => api.post<{ conflicts: string[] }>(p("git/merge/"), { name: branch }), { reloadEditor: true });
+    const res = await runGit(() => api.post<{ conflicts: string[]; auto_merged?: string[] }>(p("git/merge/"), { name: branch }), { reloadEditor: true });
     if (!res) return;
+    if (res.auto_merged?.length) toast(t("Notebooks merged cell by cell: {files}", { files: res.auto_merged.join(", ") }), "success");
     if (res.conflicts.length) {
       toast(t("{n} file(s) have conflicts. Resolve them to finish the merge.", { n: res.conflicts.length }), "error");
       setView({ name: "changes" });

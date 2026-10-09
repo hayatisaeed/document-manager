@@ -201,20 +201,24 @@ def latex_header(lang: str, has_rtl: bool, theme: str) -> str:
     if theme == "dark":
         lines += [r"\pagecolor[HTML]{171B21}", r"\color[HTML]{E3E7EC}"]
     if has_rtl:
-        # Latin fonts fall back to Vazirmatn for Persian characters (e.g. strings in code).
+        # Code: Vazir Code is monospaced and covers Latin and Persian, so strings and
+        # comments in Persian are shaped by HarfBuzz in one font (no fallback gaps).
+        code = (f"[Path={_tex_path(_fonts_dir())}, Extension=.ttf, UprightFont=*, BoldFont=*, "
+                "ItalicFont=*, BoldItalicFont=*, BoldFeatures={FakeBold=2}, BoldItalicFeatures={FakeBold=2}, "
+                "Renderer=HarfBuzz, Script=Arabic, Scale=0.9]{Vazir-Code}")
+        # Latin text fonts fall back to Vazirmatn for stray Persian characters.
         fallback_font = (_fonts_dir() / "Vazirmatn-Regular.ttf").resolve().as_posix()
         lines.append(r"\directlua{luaotfload.add_fallback('dmpersian', {'[" + fallback_font + r"]:mode=harf;'})}")
         latin = "[RawFeature={fallback=dmpersian}]"
+        lines += [r"\babelfont{tt}" + code]
         if lang == "fa":
             lines += [r"\babelfont{rm}" + vaz, r"\babelfont{sf}" + vaz,
-                      r"\babelfont{tt}" + latin + "{Latin Modern Mono}",
                       r"\babelfont[english]{rm}" + latin + "{Latin Modern Roman}",
                       r"\babelfont[english]{sf}" + latin + "{Latin Modern Sans}",
-                      r"\babelfont[english]{tt}" + latin + "{Latin Modern Mono}"]
+                      r"\babelfont[english]{tt}" + code]
         else:
-            lines += [r"\babelfont{tt}" + latin + "{Latin Modern Mono}",
-                      r"\babelfont[persian]{rm}" + vaz, r"\babelfont[persian]{sf}" + vaz,
-                      r"\babelfont[persian]{tt}" + vaz]
+            lines += [r"\babelfont[persian]{rm}" + vaz, r"\babelfont[persian]{sf}" + vaz,
+                      r"\babelfont[persian]{tt}" + code]
     # pandoc only defines these for pdfLaTeX; with babel's bidi=basic (LuaLaTeX)
     # the language switch already sets the direction.
     lines += [r"\ifdefined\LR\else\newcommand{\LR}[1]{#1}\fi",
@@ -237,6 +241,7 @@ def _css(theme: str, has_rtl: bool, font_url: str | None = None) -> str:
         css = (
             f'@font-face {{ font-family: "Vazirmatn"; src: url("{base}Vazirmatn-Regular.ttf"); font-weight: 400; }}\n'
             f'@font-face {{ font-family: "Vazirmatn"; src: url("{base}Vazirmatn-Bold.ttf"); font-weight: 700; }}\n'
+            f'@font-face {{ font-family: "Vazir Code"; src: url("{base}Vazir-Code.ttf"); }}\n'
         ) + css
     return css
 

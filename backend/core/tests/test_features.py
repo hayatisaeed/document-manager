@@ -124,7 +124,8 @@ class CalloutAndCodeTests(BaseTest):
 
 
 class NotebookTests(BaseTest):
-    def nb(self, outputs=None, source="print('hi')"):
+    @staticmethod
+    def nb(outputs=None, source="print('hi')"):
         return json.dumps({"cells": [
             {"cell_type": "markdown", "metadata": {}, "source": "# Results\n\nWe measured things."},
             {"cell_type": "code", "metadata": {}, "execution_count": 1, "source": source,
@@ -213,3 +214,113 @@ class RtlLayoutRegressionTests(BaseTest):
         self.assertGreater(code, tex.rindex("\\begin{otherlanguage}{english}", 0, code))
         self.assertIn("layout=graphics", tex)  # babel: TikZ boxes in RTL text
         self.assertIn("fallback=dmpersian", tex)  # Persian glyphs inside code
+
+
+@unittest.skipUnless(kernels.available(), "no Jupyter kernel installed")
+class WidgetBridgeTests(BaseTest):
+    def test_slider_roundtrip_and_output_capture(self):
+        slug = self.create()
+        path = "notes/w.ipynb"
+        self.c.put(self.api(slug, f"file/?path={path}"), {"content": NotebookTests.nb(None)}, format="json")
+        run = lambda code: self.c.post(self.api(slug, "kernel/execute/"), {"path": path, "code": code}, format="json").data
+        try:
+            r = run("import ipywidgets as w\ns = w.IntSlider(value=3)\ns")
+            view = r["outputs"][0]["data"]["application/vnd.jupyter.widget-view+json"]
+            ev = self.c.get(self.api(slug, "kernel/events/"), {"path": path, "since": 0, "wait": 0}).data
+            opens = [e for e in ev["events"] if e["msg_type"] == "comm_open"]
+            model = next(e for e in opens if e["content"]["comm_id"] == view["model_id"])
+            self.assertEqual(model["content"]["data"]["state"]["value"], 3)
+
+            # The browser moves the slider.
+            self.c.post(self.api(slug, "kernel/comm/"), {"path": path, "msg_type": "comm_msg", "content": {
+                "comm_id": view["model_id"], "data": {"method": "update", "state": {"value": 7}, "buffer_paths": []}}},
+                format="json")
+            import time
+            time.sleep(0.5)
+            self.assertEqual(run("s.value")["outputs"][0]["data"]["text/plain"], "7")
+
+            # Output widgets capture prints: they reach the browser as events, not the cell.
+            r = run("out = w.Output()\ndisplay(out)\nwith out:\n    print('captured!')\nprint('cell output')")
+            texts = [o.get("text", "") for o in r["outputs"] if o["output_type"] == "stream"]
+            self.assertEqual(texts, ["cell output\n"])
+            ev = self.c.get(self.api(slug, "kernel/events/"), {"path": path, "since": ev["seq"], "wait": 0}).data
+            captured = [e for e in ev["events"] if e["captured"] and e["msg_type"] == "stream"]
+            self.assertEqual(captured[0]["content"]["text"], "captured!\n")
+        finally:
+            self.c.post(self.api(slug, "kernel/shutdown/"), {"path": path}, format="json")
+
+
+class NotebookMergeTests(BaseTest):
+    """Notebooks are merged cell by cell instead of as JSON text."""
+
+    @staticmethod
+    def nb(*cells):
+        return json.dumps({"cells": [{"id": cid, "cell_type": "code", "metadata": {}, "source": src,
+                                      "outputs": [], "execution_count": None} for cid, src in cells],
+                           "metadata": {}, "nbformat": 4, "nbformat_minor": 5})
+
+    def setUp(self):
+        super().setUp()
+        self.slug = self.create()
+        self.path = "notes/analysis.ipynb"
+        self.put(self.nb(("a", "load()"), ("b", "clean()"), ("c", "plot()")))
+        self.c.post(self.api(self.slug, "git/commit/"), {"message": "base"}, format="json")
+        self.c.post(self.api(self.slug, "git/branches/"), {"name": "other"}, format="json")
+
+    def put(self, content):
+        r = self.c.put(self.api(self.slug, f"file/?path={self.path}"), {"content": content}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+
+    def commit(self, msg):
+        self.c.post(self.api(self.slug, "git/commit/"), {"message": msg}, format="json")
+
+    def cells(self):
+        nb = json.loads(self.c.get(self.api(self.slug, "file/"), {"path": self.path}).data["content"])
+        return [(c["id"], c["source"]) for c in nb["cells"]]
+
+    def test_edits_to_different_cells_merge_automatically(self):
+        # Both sides append a cell at the end: a guaranteed conflict for a text merge.
+        self.put(self.nb(("a", "load()"), ("b", "clean()"), ("c", "plot(color='red')"), ("t", "export()")))
+        self.commit("theirs: plot colour, export")
+        self.c.post(self.api(self.slug, "git/checkout/"), {"name": "main"}, format="json")
+        self.put(self.nb(("a", "load('data.csv')"), ("b", "clean()"), ("c", "plot()"), ("o", "summary()")))
+        self.commit("ours: load file, add summary")
+        r = self.c.post(self.api(self.slug, "git/merge/"), {"name": "other"}, format="json")
+        self.assertEqual(r.data["conflicts"], [])
+        self.assertEqual(r.data["auto_merged"], [self.path])
+        self.assertEqual(self.cells(), [("a", "load('data.csv')"), ("b", "clean()"), ("c", "plot(color='red')"),
+                                        ("t", "export()"), ("o", "summary()")])
+        st = self.c.get(self.api(self.slug, "git/status/")).data
+        self.assertFalse(st["merging"])  # merge commit was completed
+        self.assertEqual(len(self.c.get(self.api(self.slug, "git/log/")).data[0]["parents"]), 2)
+
+    def test_same_cell_conflict_is_resolved_per_cell(self):
+        self.put(self.nb(("a", "load()"), ("b", "clean(strict=True)"), ("c", "plot()")))
+        self.commit("theirs")
+        self.c.post(self.api(self.slug, "git/checkout/"), {"name": "main"}, format="json")
+        self.put(self.nb(("a", "load()"), ("b", "clean(fast=True)"), ("c", "plot()"), ("d", "save()")))
+        self.commit("ours")
+        r = self.c.post(self.api(self.slug, "git/merge/"), {"name": "other"}, format="json")
+        self.assertEqual(r.data["conflicts"], [self.path])
+        v = self.c.get(self.api(self.slug, "git/conflict/"), {"path": self.path}).data["notebook"]
+        conflict = [e for e in v["entries"] if e["status"] == "conflict"]
+        self.assertEqual([e["key"] for e in conflict], ["b"])
+        self.assertEqual(conflict[0]["ours"]["source"], "clean(fast=True)")
+        self.assertEqual(conflict[0]["theirs"]["source"], "clean(strict=True)")
+        # Missing choice is refused; "both" keeps the two versions.
+        bad = self.c.post(self.api(self.slug, "git/conflict/"), {"path": self.path, "choices": {}}, format="json")
+        self.assertEqual(bad.status_code, 409)
+        self.c.post(self.api(self.slug, "git/conflict/"), {"path": self.path, "choices": {"b": "both"}}, format="json")
+        self.assertEqual([s for _, s in self.cells()],
+                         ["load()", "clean(fast=True)", "clean(strict=True)", "plot()", "save()"])
+        self.assertEqual(len({i for i, _ in self.cells()}), 5)  # ids stay unique
+
+    def test_notebooks_without_ids_align_by_content(self):
+        from core.services import nbmerge
+        strip = lambda nb: {**nb, "cells": [{k: v for k, v in c.items() if k != "id"} for c in nb["cells"]]}
+        base = strip(json.loads(self.nb(("a", "x = 1"), ("b", "y = 2"))))
+        ours = strip(json.loads(self.nb(("a", "x = 10"), ("b", "y = 2"))))
+        theirs = strip(json.loads(self.nb(("a", "x = 1"), ("b", "y = 20"))))
+        result = nbmerge.merge(base, ours, theirs)
+        self.assertEqual(result["conflicts"], 0)
+        self.assertEqual([e["cell"]["source"] for e in result["entries"]], ["x = 10", "y = 20"])

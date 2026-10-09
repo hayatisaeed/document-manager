@@ -58,3 +58,22 @@ def kernel_shutdown(request, slug):
     _, path = _target(request, slug)
     kernels.shutdown(slug, path)
     return Response(kernels.status(slug, path))
+
+
+@api_view(["GET"])
+def kernel_events(request, slug):
+    """Long poll: kernel messages after ``since`` (drives live widgets in the browser)."""
+    _, path = _target(request, slug)
+    since = int(request.query_params.get("since", 0))
+    wait = min(float(request.query_params.get("wait", 20)), 25.0)
+    return Response(kernels.events(slug, path, since, wait))
+
+
+@api_view(["POST"])
+def kernel_comm(request, slug):
+    """Send a widget message (comm_open / comm_msg / comm_close) to the kernel."""
+    _, path = _target(request, slug)
+    d = request.data
+    msg_id = kernels.send_comm(slug, path, d.get("msg_type", "comm_msg"), d.get("content") or {},
+                               d.get("buffers") or [], d.get("metadata") or {}, d.get("msg_id") or None)
+    return Response({"msg_id": msg_id})

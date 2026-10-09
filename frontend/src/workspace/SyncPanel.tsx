@@ -42,12 +42,13 @@ export default function SyncPanel() {
   const op = async (kind: "fetch" | "pull" | "push") => {
     setBusy(kind);
     const res = await runGit(
-      () => api.post<{ message: string; conflicts?: string[] }>(p(`git/${kind}/`), { remote }),
+      () => api.post<{ message: string; conflicts?: string[]; auto_merged?: string[] }>(p(`git/${kind}/`), { remote }),
       { reloadEditor: kind === "pull" },
     );
     setBusy(null);
     if (!res) return;
     setLog(res.message || t("Done."));
+    if (res.auto_merged?.length) toast(t("Notebooks merged cell by cell: {files}", { files: res.auto_merged.join(", ") }), "success");
     if (res.conflicts?.length) {
       toast(t("Pulled with {n} conflict(s). Resolve them to finish.", { n: res.conflicts.length }), "error");
       setView({ name: "changes" });

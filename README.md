@@ -128,7 +128,9 @@ To use a different citation style, upload a `.csl` file (see the
   Persian, Arabic and Latin digits and half-spaces vs. spaces, so you find text however it was typed.
 - **PDF export** uses LuaLaTeX with babel's bidirectional support and the bundled
   [Vazirmatn](https://github.com/rastikerdar/vazirmatn) font (SIL Open Font License) for
-  Persian, and Latin Modern for English. Code blocks always stay left-to-right. Set the main
+  Persian, and Latin Modern for English. Code blocks always stay left-to-right and use the
+  monospaced [Vazir Code](https://github.com/rastikerdar/vazir-code-font) font, so Persian
+  strings and comments in code are shaped correctly. Set the main
   language under **Project**: Persian puts the page, title and table of contents right-to-left.
   By default the app detects it from the text.
 - **Word export** marks Persian paragraphs and runs as right-to-left, so Word lays them out natively.
@@ -161,9 +163,21 @@ Add a chapter or file with the **Jupyter notebook** format, or upload an existin
 - Notebooks can be chapters of a book: exports include their text, code and outputs.
 - To use another Python environment, register it as a kernel with
   `python -m ipykernel install --user --name myenv`. It then appears in the kernel menu.
-- HTML and Markdown in outputs are sanitised, so a notebook from a collaborator can't run
-  scripts in the app. Interactive JavaScript widgets (Plotly, ipywidgets) therefore show
-  their static fallback.
+- **Interactive output:**
+  - **ipywidgets** are live, connected to the kernel: sliders, dropdowns, buttons, `@interact`,
+    and `Output` widgets.
+  - **Plotly**, **Altair/Vega-Lite**, **Bokeh** and **folium** maps, plus any other HTML output
+    that uses JavaScript, run inside a sandboxed frame. That frame can't touch the app or your files.
+  - Plotly and Vega ship with the app, so they work offline. Bokeh and folium load their
+    libraries from the internet.
+  - Widget libraries that need their own browser code (ipympl, bqplot, ipyleaflet) aren't
+    supported; their text version is shown instead.
+- **Merging notebooks:** when you and a collaborator both edit a notebook, it's merged cell by
+  cell instead of as JSON text. Edits to different cells, and cells added on either side, merge
+  automatically. If you both changed the *same* cell, the conflict screen shows the two versions
+  side by side, with buttons for *Keep mine*, *Keep theirs*, *Keep both* or *Remove the cell*.
+- Static HTML and Markdown in outputs are sanitised, so a notebook from a collaborator can't
+  run scripts in the app.
 
 ## Themes
 
@@ -211,6 +225,11 @@ translation goes in `src/locales/fa.ts`.
   notebook cells, and TipTap for rich text.
 - **Notebooks:** `services/kernels.py` keeps one Jupyter kernel per open notebook in the
   server process. The app therefore runs as a single process with threads (waitress).
+  Live widgets use a small bridge: the browser long-polls `kernel/events/` for kernel
+  messages and posts widget messages to `kernel/comm/`. The official
+  `@jupyter-widgets/html-manager` renders them (`frontend/src/components/widgets.ts`).
+- **Notebook merges:** `services/nbmerge.py` does a three-way merge per cell, matching cells by
+  their nbformat id, or by content for older notebooks.
 - **Export:** each chapter is converted to a Pandoc AST and the ASTs are concatenated.
   Callouts and code blocks are normalised first (`pandoc/callouts.lua`). The book is then
   rendered in one pass with the bidirectional-text filter (`pandoc/bidi.lua`) and the

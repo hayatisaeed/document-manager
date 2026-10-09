@@ -35,6 +35,8 @@ urlpatterns = [
     path(P + "kernel/interrupt/", notebook_views.kernel_interrupt),
     path(P + "kernel/restart/", notebook_views.kernel_restart),
     path(P + "kernel/shutdown/", notebook_views.kernel_shutdown),
+    path(P + "kernel/events/", notebook_views.kernel_events),
+    path(P + "kernel/comm/", notebook_views.kernel_comm),
     # git
     path(P + "git/status/", git_views.status),
     path(P + "git/commit/", git_views.commit),

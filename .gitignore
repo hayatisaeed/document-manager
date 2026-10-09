@@ -17,3 +17,4 @@ data/
 Thumbs.db
 .idea/
 .vscode/
+frontend/public/vendor/

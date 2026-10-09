@@ -405,32 +405,76 @@ def delete_branch(repo: Path, name: str, force: bool = False) -> None:
     run(repo, "branch", "-D" if force else "-d", name)
 
 
+def _auto_merge_notebooks(repo: Path) -> list[str]:
+    """Merge conflicted notebooks cell by cell; returns the notebooks merged automatically."""
+    from . import nbmerge
+
+    merged = []
+    for path in status(repo)["conflicts"]:
+        if not path.endswith(".ipynb"):
+            continue
+        v = conflict_versions(repo, path, with_notebook=False)
+        result = nbmerge.merge(nbmerge.loads(v["base"]), nbmerge.loads(v["ours"]), nbmerge.loads(v["theirs"]))
+        if result["conflicts"] == 0 and (v["ours"] or v["theirs"]):
+            resolve(repo, path, nbmerge.compose(result))
+            merged.append(path)
+    return merged
+
+
+def _finish_notebook_merge(repo: Path) -> list[str]:
+    """Auto-merge conflicted notebooks; if nothing else conflicts, complete the merge commit."""
+    if not is_merging(repo):
+        return []
+    auto = _auto_merge_notebooks(repo)
+    if auto and not status(repo)["conflicts"]:
+        run(repo, "commit", "--no-edit")
+    return auto
+
+
 def merge(repo: Path, name: str) -> dict:
     check_ref(name, "branch name")
     proc = run(repo, "merge", "--no-ff", "--no-edit", name, check=False)
+    auto = _finish_notebook_merge(repo)
     st = status(repo)
-    if proc.returncode != 0 and not st["conflicts"]:
+    if proc.returncode != 0 and not st["conflicts"] and not auto:
         raise GitError((proc.stderr or proc.stdout).strip())
-    return {"conflicts": st["conflicts"], "message": (proc.stdout or proc.stderr).strip()}
+    return {"conflicts": st["conflicts"], "auto_merged": auto, "message": (proc.stdout or proc.stderr).strip()}
 
 
 def abort_merge(repo: Path) -> None:
     run(repo, "merge", "--abort")
 
 
-def conflict_versions(repo: Path, path: str) -> dict:
+def conflict_versions(repo: Path, path: str, with_notebook: bool = True) -> dict:
     def stage(n: int) -> str | None:
         proc = run(repo, "show", f":{n}:{path}", check=False)
         return proc.stdout if proc.returncode == 0 else None
 
     working = repo / path
-    return {
+    versions = {
         "path": path,
         "base": stage(1),
         "ours": stage(2),
         "theirs": stage(3),
         "working": working.read_text(encoding="utf-8", errors="replace") if working.exists() else None,
     }
+    if with_notebook and path.endswith(".ipynb"):
+        from . import nbmerge
+        versions["notebook"] = nbmerge.merge(nbmerge.loads(versions["base"]), nbmerge.loads(versions["ours"]),
+                                             nbmerge.loads(versions["theirs"]))
+    return versions
+
+
+def resolve_notebook(repo: Path, path: str, choices: dict[str, str]) -> None:
+    """Finish a notebook conflict with a choice per conflicting cell."""
+    from . import nbmerge
+
+    v = conflict_versions(repo, path, with_notebook=False)
+    result = nbmerge.merge(nbmerge.loads(v["base"]), nbmerge.loads(v["ours"]), nbmerge.loads(v["theirs"]))
+    try:
+        resolve(repo, path, nbmerge.compose(result, choices))
+    except ValueError as exc:
+        raise GitError(str(exc)) from exc
 
 
 def resolve(repo: Path, path: str, content: str | None) -> None:
@@ -482,13 +526,16 @@ def pull(repo: Path, remote: str = "origin", branch: str | None = None) -> dict:
     check_ref(branch, "branch name")
     proc = run(repo, "pull", "--no-rebase", "--no-edit", remote, branch,
                extra_config=auth_config(repo, remote), check=False, timeout=300)
+    auto = _finish_notebook_merge(repo)
     st = status(repo)
-    if proc.returncode != 0 and not st["conflicts"]:
+    if proc.returncode != 0 and not st["conflicts"] and not auto:
         raise GitError((proc.stderr or proc.stdout).strip())
+    if auto and not st["upstream"]:
+        run(repo, "branch", f"--set-upstream-to={remote}/{branch}", check=False)
     # Track the remote branch so ahead/behind counts work.
     if proc.returncode == 0 and not st["upstream"]:
         run(repo, "branch", f"--set-upstream-to={remote}/{branch}", check=False)
-    return {"conflicts": st["conflicts"], "message": (proc.stdout + proc.stderr).strip()}
+    return {"conflicts": st["conflicts"], "auto_merged": auto, "message": (proc.stdout + proc.stderr).strip()}
 
 
 def push(repo: Path, remote: str = "origin", branch: str | None = None) -> str:

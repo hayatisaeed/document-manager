@@ -193,7 +193,7 @@ def cite(request, slug):
     return Response({"markup": bib.citation_markup(fmt, keys)})
 
 
-FONT_FILES = {"Vazirmatn-Regular.ttf", "Vazirmatn-Bold.ttf"}
+FONT_FILES = {"Vazirmatn-Regular.ttf", "Vazirmatn-Bold.ttf", "Vazir-Code.ttf"}
 
 
 @api_view(["GET"])

@@ -127,6 +127,9 @@ def conflict(request, slug):
         return Response(git.conflict_versions(repo, path))
     (path,) = require(request.data, "path")
     safe_path(repo, path)
+    if request.data.get("choices") is not None:
+        git.resolve_notebook(repo, path, request.data["choices"])
+        return Response(git.status(repo))
     content = None if request.data.get("delete") else request.data.get("content", "")
     git.resolve(repo, path, content)
     return Response(git.status(repo))

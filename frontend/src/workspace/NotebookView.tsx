@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import SandboxedOutput, { htmlDoc, needsScripts, plotlyDoc, vegaDoc } from "../components/SandboxedOutput";
+import type { WidgetBridge } from "../components/widgets";
 import { api, ApiError, qs } from "../api";
 import CodeEditor from "../editors/CodeEditor";
 import { ansiToHtml, joinText, renderMarkdown, sanitize } from "../components/notebookRender";
 import { toast, toastError } from "../components/Toast";
 import { t } from "../i18n";
-import { fmtNum } from "../prefs";
+import { fmtNum, usePrefs } from "../prefs";
 import type { Notebook, NotebookCell, NotebookOutput } from "../types";
 import { basename } from "../util";
 import { useWorkspace } from "./context";
@@ -28,6 +30,12 @@ interface ExecResult {
 type Cell = NotebookCell & { key: string };
 
 const AUTOSAVE_MS = 1200;
+const WIDGET_MIME = "application/vnd.jupyter.widget-view+json";
+const PLOTLY_MIME = "application/vnd.plotly.v1+json";
+const VEGA_MIMES = ["application/vnd.vegalite.v5+json", "application/vnd.vegalite.v4+json", "application/vnd.vega.v5+json"];
+
+/** Live widget connection for the open notebook (null until a kernel runs). */
+const WidgetContext = createContext<WidgetBridge | null>(null);
 const newId = () => Math.random().toString(16).slice(2, 10);
 
 function toCells(nb: Notebook): Cell[] {
@@ -52,8 +60,23 @@ export default function NotebookView({ path }: { path: string }) {
   const timer = useRef<number | undefined>(undefined);
   const stopAll = useRef(false);
 
+  const [bridge, setBridge] = useState<WidgetBridge | null>(null);
+
   cellsRef.current = cells;
   nbRef.current = nb;
+
+  // Interactive widgets need a live connection to the kernel; load it on demand.
+  useEffect(() => {
+    if (!kernel.running || bridge) return;
+    let cancelled = false;
+    import("../components/widgets").then((m) => {
+      if (!cancelled) setBridge(new m.WidgetBridge(p, path));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [kernel.running, bridge, p, path]);
+  useEffect(() => () => bridge?.stop(), [bridge]);
 
   // ------------------------------------------------------------ load & save
   useEffect(() => {
@@ -337,6 +360,7 @@ export default function NotebookView({ path }: { path: string }) {
         </button>
       </div>
 
+      <WidgetContext.Provider value={bridge}>
       <div className="nb-cells">
         {cells.map((cell, i) => (
           <CellView
@@ -369,6 +393,7 @@ export default function NotebookView({ path }: { path: string }) {
           </div>
         )}
       </div>
+      </WidgetContext.Provider>
     </div>
   );
 }
@@ -407,7 +432,7 @@ function CellView(props: CellProps) {
   const prompt = cell.cell_type === "code" ? (running ? "*" : cell.execution_count ? fmtNum(cell.execution_count) : " ") : "";
 
   return (
-    <div className={`nb-cell nb-${cell.cell_type} ${selected ? "selected" : ""}`} onMouseDown={props.onSelect}>
+    <div className={`nb-cell nb-cell-${cell.cell_type} ${selected ? "selected" : ""}`} onMouseDown={props.onSelect}>
       <div className="nb-gutter" dir="ltr">
         {cell.cell_type === "code" && <span className="nb-prompt">[{prompt}]</span>}
       </div>
@@ -465,6 +490,16 @@ function CellView(props: CellProps) {
 }
 
 function Output({ output }: { output: NotebookOutput }) {
+  const { dark } = usePrefs();
+  const data = output.data ?? {};
+  const get = (mime: string) => joinText(data[mime]);
+  const plotly = data[PLOTLY_MIME] as unknown;
+  const vegaMime = VEGA_MIMES.find((m) => data[m]);
+  const plotBuild = useCallback((id: number) => plotlyDoc(id, plotly as never, dark), [plotly, dark]);
+  const vegaBuild = useCallback((id: number) => vegaDoc(id, vegaMime ? data[vegaMime] : null, dark), [vegaMime, data, dark]);
+  const html = get("text/html");
+  const htmlBuild = useCallback((id: number) => htmlDoc(id, html, dark), [html, dark]);
+
   if (output.output_type === "stream") {
     return <pre className={`nb-stream ${output.name === "stderr" ? "nb-stderr" : ""}`} dangerouslySetInnerHTML={{ __html: ansiToHtml(joinText(output.text)) }} />;
   }
@@ -472,17 +507,60 @@ function Output({ output }: { output: NotebookOutput }) {
     const tb = output.traceback?.length ? output.traceback.join("\n") : `${output.ename}: ${output.evalue}`;
     return <pre className="nb-error" dangerouslySetInnerHTML={{ __html: ansiToHtml(tb) }} />;
   }
-  const data = output.data ?? {};
-  const get = (mime: string) => joinText(data[mime]);
+  if (data[WIDGET_MIME]) return <WidgetOutput modelId={(data[WIDGET_MIME] as unknown as { model_id: string }).model_id} fallback={get("text/plain")} />;
+  if (plotly) return <SandboxedOutput build={plotBuild} dark={dark} />;
+  if (vegaMime) return <SandboxedOutput build={vegaBuild} dark={dark} />;
   if (data["image/png"]) return <img className="nb-image" src={`data:image/png;base64,${get("image/png").trim()}`} alt="" />;
   if (data["image/jpeg"]) return <img className="nb-image" src={`data:image/jpeg;base64,${get("image/jpeg").trim()}`} alt="" />;
   if (data["image/svg+xml"]) {
     // As an <img>, SVG cannot run scripts.
     return <img className="nb-image" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(get("image/svg+xml"))}`} alt="" />;
   }
-  if (data["text/html"]) return <div className="nb-html" dangerouslySetInnerHTML={{ __html: sanitize(get("text/html")) }} />;
+  if (html) {
+    // Interactive HTML (Bokeh, folium, …) runs in a sandbox; static HTML (tables) is shown inline.
+    if (needsScripts(html)) return <SandboxedOutput build={htmlBuild} dark={dark} />;
+    return <div className="nb-html" dangerouslySetInnerHTML={{ __html: sanitize(html) }} />;
+  }
   if (data["text/markdown"]) return <div className="nb-html prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(get("text/markdown")) }} />;
   if (data["text/latex"]) return <div className="nb-html" dangerouslySetInnerHTML={{ __html: renderMarkdown(get("text/latex")) }} />;
   if (data["text/plain"]) return <pre className="nb-stream" dangerouslySetInnerHTML={{ __html: ansiToHtml(get("text/plain")) }} />;
   return <pre className="nb-stream muted">{t("(output type not shown: {types})", { types: Object.keys(data).join(", ") })}</pre>;
+}
+
+/** A live ipywidget; falls back to its text form when the kernel is not running. */
+function WidgetOutput({ modelId, fallback }: { modelId: string; fallback: string }) {
+  const bridge = useContext(WidgetContext);
+  const ref = useRef<HTMLDivElement>(null);
+  const [state, setState] = useState<"loading" | "live" | "missing">("loading");
+
+  useEffect(() => {
+    if (!bridge || !ref.current) {
+      setState("missing");
+      return;
+    }
+    const el = ref.current;
+    el.innerHTML = "";
+    let alive = true;
+    setState("loading");
+    bridge
+      .render(modelId, el)
+      .then((ok) => alive && setState(ok ? "live" : "missing"))
+      .catch(() => alive && setState("missing"));
+    return () => {
+      alive = false;
+      el.innerHTML = "";
+    };
+  }, [bridge, modelId]);
+
+  return (
+    <div className="nb-widget">
+      <div ref={ref} />
+      {state === "missing" && (
+        <div className="muted small">
+          <pre className="nb-stream">{fallback}</pre>
+          {t("Run the cell to use this interactive widget.")}
+        </div>
+      )}
+    </div>
+  );
 }

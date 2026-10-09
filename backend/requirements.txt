@@ -7,3 +7,5 @@ waitress==3.0.2
 # Jupyter notebooks: run code cells in local kernels.
 jupyter_client==8.6.3
 ipykernel==6.29.5
+# Interactive widgets (sliders, interact, Output) in notebooks.
+ipywidgets==8.1.7
