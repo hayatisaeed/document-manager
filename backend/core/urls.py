@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import files, git_views, notebook_views, projects
+from .views import env_views, files, git_views, notebook_views, projects
 
 P = "projects/<slug:slug>/"
 
@@ -10,6 +10,18 @@ urlpatterns = [
     path("fonts/<str:name>", files.font),
     path("kernels/", notebook_views.kernel_specs),
     path("credentials/<int:pk>/", projects.credential_detail),
+    # Python environments, packages and package sources
+    path("envs/", env_views.env_list),
+    path("envs/register/", env_views.env_register),
+    path("envs/create/", env_views.env_create),
+    path("envs/<str:env_id>/", env_views.env_detail),
+    path("envs/<str:env_id>/packages/", env_views.env_packages),
+    path("packages/lookup/", env_views.package_lookup),
+    path("package-sources/", env_views.package_sources),
+    path("package-sources/test/", env_views.package_source_test),
+    path("jobs/", env_views.job_list),
+    path("jobs/<str:job_id>/", env_views.job_detail),
+    path("jobs/<str:job_id>/cancel/", env_views.job_cancel),
     path("projects/", projects.project_list),
     path("projects/import/", projects.project_import),
     path("projects/unregistered/", projects.unregistered_folders),
@@ -29,6 +41,9 @@ urlpatterns = [
     path(P + "references/<str:key>/", files.reference_detail),
     path(P + "cite/", files.cite),
     # notebooks
+    path(P + "env/", env_views.project_env),
+    path(P + "env/export/", env_views.project_env_export),
+    path(P + "env/create/", env_views.project_env_create),
     path(P + "kernel/status/", notebook_views.kernel_status),
     path(P + "kernel/start/", notebook_views.kernel_start),
     path(P + "kernel/execute/", notebook_views.kernel_execute),
