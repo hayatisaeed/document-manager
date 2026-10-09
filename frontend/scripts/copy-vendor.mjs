@@ -2,7 +2,8 @@
 // so Plotly and Vega/Altair charts work offline. Runs before `dev` and `build`.
 import { copyFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-const out = new URL("../public/vendor/", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const out = fileURLToPath(new URL("../public/vendor/", import.meta.url));
 mkdirSync(out, { recursive: true });
 const files = {
   "plotly.min.js": "plotly.js-dist-min/plotly.min.js",
@@ -11,6 +12,6 @@ const files = {
   "vega-embed.min.js": "vega-embed/build/vega-embed.min.js",
 };
 for (const [name, spec] of Object.entries(files)) {
-  copyFileSync(new URL(`../node_modules/${spec}`, import.meta.url).pathname, join(out, name));
+  copyFileSync(fileURLToPath(new URL(`../node_modules/${spec}`, import.meta.url)), join(out, name));
 }
 console.log(`Copied ${Object.keys(files).length} vendor scripts to public/vendor/`);
