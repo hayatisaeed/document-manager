@@ -1,16 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import { EditorView, type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { api, ApiError, download, qs } from "../api";
 import CodeEditor, { insertAtCursor, wrapSelection, ZWNJ } from "../editors/CodeEditor";
+import { livePreview } from "../editors/livePreview";
 import RichEditor, { CALLOUT_LABEL, CALLOUT_TYPES, CODE_LANGUAGES, RichEditorHandle } from "../editors/RichEditor";
 import NotebookView from "./NotebookView";
+import DrawingView from "./DrawingView";
+import SheetView from "./SheetView";
+import { DocSide, SideToggles, useComments, useSideTab } from "./DocSide";
+import FilePicker from "../components/FilePicker";
+import {
+  commentExtension, commentField, commentPluginKey, locate, makeAnchor, proseText, setCommentMarks, textIndex,
+  type MarkRange, type TextAnchor,
+} from "../editors/commentMarks";
 import { t } from "../i18n";
-import { fmtNum, usePrefs } from "../prefs";
+import { fmtNum, setPrefs, usePrefs } from "../prefs";
 import Modal from "../components/Modal";
 import PreviewFrame from "../components/PreviewFrame";
 import { toast, toastError } from "../components/Toast";
-import type { FileMeta, TreeItem } from "../types";
-import { basename, FORMAT_LABEL, isImage, relativePath, STATUSES } from "../util";
+import type { CommentAnchor, FileMeta, TreeItem } from "../types";
+import { basename, FORMAT_LABEL, isImage, relativePath, resolveLink, STATUSES } from "../util";
 import { useWorkspace } from "./context";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
@@ -29,6 +38,8 @@ export default function DocumentView({ path }: { path: string }) {
       </div>
     );
   }
+  if (item?.kind === "drawing") return <DrawingView path={path} />;
+  if (item?.kind === "sheet") return <SheetView path={path} />;
   if (item && !item.text) return <BinaryView item={item} />;
   if (path.endsWith(".ipynb")) return <NotebookView path={path} />;
   return <TextDocument path={path} />;
@@ -36,17 +47,22 @@ export default function DocumentView({ path }: { path: string }) {
 
 function BinaryView({ item }: { item: TreeItem }) {
   const { p } = useWorkspace();
+  const [side, setSide] = useSideTab();
   const url = p("raw/") + qs({ path: item.path });
   return (
     <div className="doc">
       <div className="doc-head">
-        <h2 className="doc-path" dir="auto">
-          {item.path}
-        </h2>
-        <a className="btn btn-sm" href={url + "&download=1"}>
-          {t("Download")}
-        </a>
+        <div className="doc-title-row">
+          <h2 className="doc-path" dir="auto">
+            {item.path}
+          </h2>
+          <SideToggles tab={side === "links" ? side : null} setTab={setSide} withComments={false} />
+          <a className="btn btn-sm" href={url + "&download=1"}>
+            {t("Download")}
+          </a>
+        </div>
       </div>
+      <div className="doc-row">
       <div className="binary-view">
         {isImage(item.path) ? (
           <img src={url} alt={item.path} />
@@ -56,6 +72,8 @@ function BinaryView({ item }: { item: TreeItem }) {
           <p className="muted">{t("No preview for this file type ({size} KB).", { size: fmtNum(Math.round((item.size ?? 0) / 1024)) })}</p>
         )}
       </div>
+      {side === "links" && <DocSide path={item.path} tab="links" setTab={setSide} />}
+      </div>
     </div>
   );
 }
@@ -63,7 +81,7 @@ function BinaryView({ item }: { item: TreeItem }) {
 function TextDocument({ path }: { path: string }) {
   const ws = useWorkspace();
   const { p, manifest, saveManifest, refreshStatus, editorRef, status, setView, tree } = ws;
-  const { dark } = usePrefs();
+  const { dark, mdLive } = usePrefs();
   const [content, setContent] = useState<string | null>(null);
   const [format, setFormat] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
@@ -77,6 +95,29 @@ function TextDocument({ path }: { path: string }) {
   const timer = useRef<number | undefined>(undefined);
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const richRef = useRef<RichEditorHandle>(null);
+  const [side, setSide] = useSideTab();
+  const comments = useComments(path);
+  const [draft, setDraft] = useState<CommentAnchor | null>(null);
+  const [activeThread, setActiveThread] = useState<string | null>(null);
+  const [located, setLocated] = useState<Set<string>>(new Set());
+  const [linkPicker, setLinkPicker] = useState(false);
+  const [editorReady, setEditorReady] = useState(0);
+  const openThread = useRef<(id: string) => void>(() => {});
+  openThread.current = (id: string) => {
+    setActiveThread(id);
+    setSide("comments");
+  };
+  const openLink = useRef<(href: string) => boolean>(() => false);
+  openLink.current = (href: string) => {
+    const target = resolveLink(path, href);
+    if (!target || !tree.some((i) => i.path === target && i.type === "file")) return false;
+    setView({ name: "editor", path: target });
+    return true;
+  };
+  const cmExtensions = useMemo(
+    () => [commentExtension((id) => openThread.current(id)), linkClick((href) => openLink.current(href))],
+    [],
+  );
 
   useEffect(() => {
     api
@@ -97,6 +138,7 @@ function TextDocument({ path }: { path: string }) {
     try {
       await api.put(p("file/") + qs({ path }), { content: contentRef.current });
       setSaveState(dirtyRef.current ? "dirty" : "saved");
+      syncAnchors.current();
       refreshStatus().catch(() => {});
     } catch (e) {
       dirtyRef.current = true;
@@ -157,6 +199,10 @@ function TextDocument({ path }: { path: string }) {
     [p, path],
   );
 
+  const live = format === "markdown" && mdLive;
+  const liveExtension = useMemo(() => (live ? livePreview(resolveSrc) : []), [live, resolveSrc]);
+  const editorExtensions = useMemo(() => [cmExtensions, liveExtension], [cmExtensions, liveExtension]);
+
   const insertCitation = useCallback(
     (keys: string[]) => {
       if (format === "html") return richRef.current?.insertCitation(keys);
@@ -203,6 +249,129 @@ function TextDocument({ path }: { path: string }) {
     }, 500);
     return () => window.clearTimeout(t);
   }, [showPreview, content, saveState, format, p, path, dark]);
+
+  // ------------------------------------------------------------ comments
+
+  /** The editor's text, a mapping to editor positions, and a way to set highlights. */
+  const surface = useCallback(() => {
+    const cm = cmRef.current?.view;
+    const rich = richRef.current?.editor;
+    if (format === "html" && rich) {
+      const { text, pos } = proseText(rich.state.doc);
+      return {
+        text,
+        selection: () => [textIndex(pos, rich.state.selection.from), textIndex(pos, rich.state.selection.to)] as const,
+        mark: (ranges: MarkRange[], active: string | null) => rich.view.dispatch(rich.state.tr.setMeta(commentPluginKey, { ranges, active })),
+        scrollTo: (id: string) => rich.view.dom.querySelector(`[data-thread="${id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }),
+        current: () => {
+          const out = new Map<string, [number, number]>();
+          commentPluginKey.getState(rich.state)?.find().forEach((d) => {
+            const id = (d.spec as { thread?: string }).thread;
+            if (id) out.set(id, [textIndex(pos, d.from), textIndex(pos, d.to)]);
+          });
+          return out;
+        },
+      };
+    }
+    if (cm) {
+      const text = cm.state.doc.toString();
+      return {
+        text,
+        selection: () => [cm.state.selection.main.from, cm.state.selection.main.to] as const,
+        mark: (ranges: MarkRange[], active: string | null) => cm.dispatch({ effects: setCommentMarks.of({ ranges, active }) }),
+        scrollTo(id: string) {
+          const range = this.current().get(id);
+          if (range) cm.dispatch({ effects: EditorView.scrollIntoView(range[0], { y: "center" }) });
+        },
+        current: () => {
+          const out = new Map<string, [number, number]>();
+          const decos = cm.state.field(commentField, false);
+          decos?.between(0, cm.state.doc.length, (from, to, d) => {
+            const id = d.spec.attributes?.["data-thread"];
+            if (id) out.set(id, [from, to]);
+          });
+          return out;
+        },
+      };
+    }
+    return null;
+  }, [format]);
+
+  // Highlight the text each open thread is about.
+  useEffect(() => {
+    const sf = surface();
+    if (!sf) return;
+    const ranges: MarkRange[] = [];
+    const found = new Set<string>();
+    for (const th of comments.threads) {
+      if (th.resolved || th.anchor.type !== "text") continue;
+      const r = locate(sf.text, th.anchor);
+      if (r) {
+        ranges.push({ id: th.id, ...r });
+        found.add(th.id);
+      }
+    }
+    sf.mark(ranges, activeThread);
+    setLocated(found);
+  }, [surface, comments.threads, activeThread, content, editorReady]);
+
+  // Picking a thread in the panel scrolls the editor to its text.
+  const scrollToThread = useRef(false);
+  useEffect(() => {
+    if (activeThread && scrollToThread.current) surface()?.scrollTo(activeThread);
+    scrollToThread.current = false;
+  }, [activeThread, surface]);
+
+  // After saving, store where each highlight is now, so anchors survive edits to the quoted text.
+  const syncAnchors = useRef<() => void>(() => {});
+  syncAnchors.current = () => {
+    const sf = surface();
+    if (!sf) return;
+    for (const [id, [from, to]] of sf.current()) {
+      const th = comments.threads.find((x) => x.id === id);
+      if (!th || th.anchor.type !== "text" || from >= to) continue;
+      const anchor = makeAnchor(sf.text, from, to);
+      if (anchor.quote !== th.anchor.quote) comments.reanchor(id, anchor);
+    }
+  };
+
+  const startComment = useCallback(() => {
+    const sf = surface();
+    if (!sf) return;
+    const [from, to] = sf.selection();
+    if (from === to || !sf.text.slice(from, to).trim()) {
+      toast(t("Select the text you want to comment on first."));
+      return;
+    }
+    setDraft(makeAnchor(sf.text, from, to) as TextAnchor);
+    setSide("comments");
+  }, [surface, setSide]);
+
+  // Ctrl+Alt+M adds a comment, as in Google Docs and Word.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === "KeyM") {
+        e.preventDefault();
+        startComment();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [startComment]);
+
+  const insertFileLink = (target: string) => {
+    const rel = relativePath(path, target).split("/").map(encodeURIComponent).join("/");
+    const label = manifest.files[target]?.title || basename(target).replace(/\.[^.]+$/, "");
+    if (format === "html") {
+      richRef.current?.editor?.chain().focus().insertContent({ type: "text", text: label, marks: [{ type: "link", attrs: { href: rel } }] }).run();
+    } else if (format === "latex") {
+      insertAtCursor(cmRef.current?.view, `\\href{${rel}}{${label}}`);
+    } else {
+      insertAtCursor(cmRef.current?.view, `[${label}](${rel})`);
+    }
+  };
+
+  const openThreads = comments.threads.filter((th) => !th.resolved).length;
 
   const meta: FileMeta = manifest.files[path] ?? {};
   const updateMeta = (patch: Partial<FileMeta>) =>
@@ -325,9 +494,19 @@ function TextDocument({ path }: { path: string }) {
               {t("View changes")}
             </button>
           )}
+          <SideToggles tab={side} setTab={setSide} openComments={openThreads} />
           <button className="btn btn-sm" onClick={() => setView({ name: "history", path })}>
             {t("History")}
           </button>
+          {format === "markdown" && (
+            <button
+              className={`btn btn-sm ${mdLive ? "btn-active" : ""}`}
+              onClick={() => setPrefs({ mdLive: !mdLive })}
+              title={t("Show formatting, math, images and tables in place; the source appears where the cursor is")}
+            >
+              {t("Live preview")}
+            </button>
+          )}
           {format && (
             <>
               <button className={`btn btn-sm ${showPreview ? "btn-active" : ""}`} onClick={() => setShowPreview((s) => !s)}>
@@ -380,6 +559,9 @@ function TextDocument({ path }: { path: string }) {
               <button className="tb" onClick={() => wrapSelection(view(), "$")} title={t("Inline math")}>
                 ∑
               </button>
+              <button className="tb" onClick={() => wrapSelection(view(), "\n$$\n", "\n$$\n")} title={t("Math block")}>
+                $$
+              </button>
               <button className="tb" onClick={() => insertAtCursor(view(), "[^1]")} title={t("Footnote")}>
                 {t("Footnote")}
               </button>
@@ -427,16 +609,57 @@ function TextDocument({ path }: { path: string }) {
           <button className="tb" onClick={() => insertAtCursor(view(), ZWNJ)} title={t("Insert a half-space (ZWNJ) — Ctrl+Shift+2")}>
             {t("Half-space")}
           </button>
+          <span className="tb-sep" />
+          <button className="tb" onClick={() => setLinkPicker(true)} title={t("Insert a link to another file of the project (Ctrl+click a link to open it)")}>
+            {t("Link to file…")}
+          </button>
+          <button className="tb" onClick={startComment} title={t("Comment on the selected text (Ctrl+Alt+M)")}>
+            {t("Comment")}
+          </button>
           <span className="muted small tb-hint">{t("Cite from the References tab")}</span>
         </div>
       )}
+      {!format && (
+        <div className="toolbar">
+          <button className="tb" onClick={startComment} title={t("Comment on the selected text (Ctrl+Alt+M)")}>
+            {t("Comment")}
+          </button>
+        </div>
+      )}
 
+      <div className="doc-row">
       <div className={`doc-body ${showPreview ? "split" : ""}`}>
-        <div className="doc-editor">
+        <div
+          className="doc-editor"
+          onClickCapture={(e) => {
+            // Rich text: Ctrl/Cmd+click on a link to another file opens it.
+            const a = (e.target as HTMLElement).closest?.("a[href]");
+            if (format === "html" && a && (e.ctrlKey || e.metaKey) && openLink.current(a.getAttribute("href") ?? "")) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+        >
           {format === "html" ? (
-            <RichEditor ref={richRef} value={content} onChange={onChange} resolveSrc={resolveSrc} />
+            <RichEditor
+              ref={richRef}
+              value={content}
+              onChange={onChange}
+              resolveSrc={resolveSrc}
+              onCommentClick={(id) => openThread.current(id)}
+              toolbarExtra={
+                <>
+                  <button type="button" className="tb" onMouseDown={(e) => e.preventDefault()} onClick={() => setLinkPicker(true)} title={t("Insert a link to another file of the project (Ctrl+click a link to open it)")}>
+                    {t("Link to file…")}
+                  </button>
+                  <button type="button" className="tb" onMouseDown={(e) => e.preventDefault()} onClick={startComment} title={t("Comment on the selected text (Ctrl+Alt+M)")}>
+                    {t("Comment")}
+                  </button>
+                </>
+              }
+            />
           ) : (
-            <CodeEditor editorRef={cmRef} value={content} onChange={onChange} language={language} />
+            <CodeEditor editorRef={cmRef} value={content} onChange={onChange} language={language} extraExtensions={editorExtensions} onReady={() => setEditorReady((n) => n + 1)} />
           )}
         </div>
         {showPreview && (
@@ -449,6 +672,23 @@ function TextDocument({ path }: { path: string }) {
           </div>
         )}
       </div>
+      {side && (
+        <DocSide
+          path={path}
+          tab={side}
+          setTab={setSide}
+          comments={comments}
+          draft={draft}
+          onCancelDraft={() => setDraft(null)}
+          active={activeThread}
+          setActive={(id) => {
+            scrollToThread.current = true;
+            setActiveThread(id);
+          }}
+          located={located}
+        />
+      )}
+      </div>
       {format === "html" && (
         <div className="doc-foot">
           <button className="btn btn-sm" onClick={() => setPicker(true)}>
@@ -456,6 +696,19 @@ function TextDocument({ path }: { path: string }) {
           </button>
           <span className="muted small">{t("Cite references from the References tab.")}</span>
         </div>
+      )}
+      {linkPicker && (
+        <FilePicker
+          title={t("Link to file…")}
+          tree={tree}
+          exclude={[path]}
+          titles={Object.fromEntries(Object.entries(manifest.files).map(([k, v]) => [k, v.title]))}
+          onClose={() => setLinkPicker(false)}
+          onPick={(target) => {
+            setLinkPicker(false);
+            insertFileLink(target);
+          }}
+        />
       )}
       {picker && (
         <Modal title={t("Insert image")} onClose={() => setPicker(false)}>
@@ -483,4 +736,31 @@ function TextDocument({ path }: { path: string }) {
       )}
     </div>
   );
+}
+
+const LINK_PATTERNS = [
+  /!?\[[^\]\n]*\]\(\s*<?([^)\s>]+)>?[^)]*\)/g, // Markdown [text](path)
+  /\\(?:input|include|includegraphics|href|subfile)\s*(?:\[[^\]]*\])?\{([^}]+)\}/g, // LaTeX
+];
+
+/** Ctrl/Cmd+click on a link to another project file opens it. */
+function linkClick(open: (href: string) => boolean) {
+  return EditorView.domEventHandlers({
+    mousedown(event, view) {
+      if (!(event.ctrlKey || event.metaKey) || event.button !== 0) return false;
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (pos === null) return false;
+      const line = view.state.doc.lineAt(pos);
+      const offset = pos - line.from;
+      for (const re of LINK_PATTERNS) {
+        for (const m of line.text.matchAll(re)) {
+          if (m.index! <= offset && offset <= m.index! + m[0].length && open(m[1])) {
+            event.preventDefault();
+            return true;
+          }
+        }
+      }
+      return false;
+    },
+  });
 }

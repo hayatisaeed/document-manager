@@ -12,7 +12,7 @@ const marked = new Marked({ gfm: true, breaks: false });
 marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 
 const CALLOUT_RE = /^\s*\[!(\w+)\][-+]?\s*/;
-const CALLOUT_KINDS: Record<string, string> = {
+export const CALLOUT_KINDS: Record<string, string> = {
   note: "note", info: "note", tip: "tip", hint: "tip", success: "tip", important: "important",
   question: "important", warning: "warning", caution: "warning", danger: "danger", error: "danger",
   bug: "danger", example: "example", quote: "quote", cite: "quote",

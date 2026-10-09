@@ -33,6 +33,12 @@ def log(request, slug):
 
 
 @api_view(["GET"])
+def graph(request, slug):
+    q = request.query_params
+    return Response(git.graph(_repo(slug), limit=min(int(q.get("limit", 200)), 1000), skip=int(q.get("skip", 0))))
+
+
+@api_view(["GET"])
 def show(request, slug, sha):
     repo = _repo(slug)
     data = git.show(repo, sha)

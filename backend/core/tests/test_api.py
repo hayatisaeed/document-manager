@@ -157,7 +157,8 @@ class FileAndGitTests(BaseTest):
 
     def test_push_pull_between_two_collaborators(self):
         bare = self.tmp / "shared.git"
-        subprocess.run(["git", "init", "--bare", "-b", "main", str(bare)], check=True, capture_output=True)
+        subprocess.run(["git", "init", "--bare", str(bare)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(bare), "symbolic-ref", "HEAD", "refs/heads/main"], check=True, capture_output=True)
         slug = self.create()
         self.c.post(self.api(slug, "git/remotes/"), {"name": "origin", "url": str(bare)}, format="json")
         r = self.c.post(self.api(slug, "git/push/"), {}, format="json")

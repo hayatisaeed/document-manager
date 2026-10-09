@@ -10,7 +10,9 @@ export type View =
   | { name: "sync" }
   | { name: "export" }
   | { name: "project" }
-  | { name: "conflict"; path: string };
+  | { name: "conflict"; path: string }
+  | { name: "graph" }
+  | { name: "tree" };
 
 /** Operations the open editor exposes to the rest of the workspace. */
 export interface EditorApi {

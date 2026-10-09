@@ -107,7 +107,9 @@ def remote_url(repo: Path, remote: str) -> str | None:
 
 def init(repo: Path) -> None:
     repo.mkdir(parents=True, exist_ok=True)
-    run(repo, "init", "-b", "main")
+    # `init -b` needs git 2.28+; setting HEAD directly works with any version.
+    run(repo, "init")
+    run(repo, "symbolic-ref", "HEAD", "refs/heads/main")
 
 
 def clone(url: str, dest: Path) -> None:
@@ -240,6 +242,52 @@ def log(repo: Path, ref: str | None = None, path: str | None = None,
     return commits
 
 
+GRAPH_FORMAT = _US.join(["%H", "%h", "%an", "%aI", "%P", "%D", "%s"]) + _RS
+
+
+def _parse_refs(decoration: str) -> list[dict]:
+    """``HEAD -> main, origin/main, tag: v1`` -> typed labels."""
+    refs = []
+    for part in filter(None, (p.strip() for p in decoration.split(","))):
+        if part.startswith("HEAD -> "):
+            refs.append({"name": "HEAD", "type": "head"})
+            part = part[len("HEAD -> "):]
+        elif part == "HEAD":
+            refs.append({"name": "HEAD", "type": "head"})
+            continue
+        if part.startswith("tag: "):
+            refs.append({"name": part[5:], "type": "tag"})
+        elif part.endswith("/HEAD"):
+            continue
+        elif part.startswith("refs/stash"):
+            refs.append({"name": "stash", "type": "stash"})
+        else:
+            refs.append({"name": part, "type": "branch"})
+    return refs
+
+
+def graph(repo: Path, limit: int = 200, skip: int = 0) -> dict:
+    """Commits on every branch, newest first in topological order, for drawing the commit tree."""
+    if not has_commits(repo):
+        return {"commits": [], "head": None}
+    remotes_prefixes = tuple(name + "/" for name in out(repo, "remote").split())
+    commits = []
+    raw = out(repo, "log", "--all", "--topo-order", "--decorate=short", f"--max-count={limit}", f"--skip={skip}",
+              f"--format={GRAPH_FORMAT}")
+    for record in raw.split(_RS):
+        record = record.strip("\n")
+        if not record:
+            continue
+        sha, short, name, date, parents, decoration, subject = record.split(_US)
+        refs = _parse_refs(decoration)
+        for ref in refs:
+            if ref["type"] == "branch" and ref["name"].startswith(remotes_prefixes):
+                ref["type"] = "remote"
+        commits.append({"sha": sha, "short": short, "author": name, "date": date,
+                        "parents": parents.split() if parents else [], "refs": refs, "subject": subject})
+    return {"commits": commits, "head": out(repo, "rev-parse", "HEAD").strip()}
+
+
 def _changed_files(repo: Path, *range_args: str, path: str | None = None) -> list[dict]:
     args = ["diff", "--numstat", "-z", "-M", *range_args]
     if path:
@@ -351,7 +399,7 @@ def discard(repo: Path, path: str) -> None:
     tracked = run(repo, "ls-files", "--error-unmatch", "--", path, check=False).returncode == 0
     in_head = has_commits(repo) and run(repo, "cat-file", "-e", f"HEAD:{path}", check=False).returncode == 0
     if in_head:
-        run(repo, "restore", "--staged", "--worktree", "--source=HEAD", "--", path)
+        run(repo, "checkout", "HEAD", "--", path)
     else:
         if tracked:
             run(repo, "rm", "--cached", "-q", "-f", "--", path)
@@ -382,22 +430,22 @@ def create_branch(repo: Path, name: str, start: str | None = None, checkout: boo
         check_ref(start)
     run(repo, "check-ref-format", "--branch", name)
     if checkout:
-        run(repo, "switch", "-c", name, *([start] if start else []))
+        run(repo, "checkout", "-b", name, *([start] if start else []))
     else:
         run(repo, "branch", name, *([start] if start else []))
 
 
 def checkout(repo: Path, name: str) -> None:
     check_ref(name, "branch name")
-    # `git switch` creates a local tracking branch automatically for remote names like
+    # `git checkout` creates a local tracking branch automatically for remote names like
     # "feature" when "origin/feature" exists.
     if name.count("/") and run(repo, "rev-parse", "--verify", f"refs/remotes/{name}", check=False).returncode == 0:
         local = name.split("/", 1)[1]
         if run(repo, "rev-parse", "--verify", f"refs/heads/{local}", check=False).returncode != 0:
-            run(repo, "switch", "-c", local, "--track", name)
+            run(repo, "checkout", "-b", local, "--track", name)
             return
         name = local
-    run(repo, "switch", name)
+    run(repo, "checkout", name, "--")
 
 
 def delete_branch(repo: Path, name: str, force: bool = False) -> None:

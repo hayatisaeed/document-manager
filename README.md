@@ -4,6 +4,8 @@ A local app for writing books and research, with git built in. Every project is 
 git repository, so you get a full version history. You can try ideas on branches,
 and you can work with a co-author by syncing through GitHub or GitLab.
 
+![A Markdown chapter with live preview, and the Links panel showing its links and backlinks](docs/images/editor.png)
+
 - **Write** in Markdown, LaTeX, rich text (a Word-like editor) or **Jupyter notebooks**.
   Each chapter can use its own format.
 - **Persian and English**, together. The interface is available in English or Persian
@@ -15,11 +17,16 @@ and you can work with a co-author by syncing through GitHub or GitLab.
 - **Structure** a book into chapters. Reorder them, track a status for each (idea → final),
   set word-count targets and follow progress.
 - **Research** with notes, tags, full-text search, and attachments (PDFs, images).
+- **Draw** mind maps, diagrams and sketches with the built-in [Excalidraw](https://excalidraw.com) editor.
+- **Spreadsheets:** open and edit Excel (`.xlsx`) and CSV/TSV files, with live formulas.
+- **Link** documents to each other, see backlinks, and explore a **graph** of how everything connects.
+- **Comment** on a passage of text or a spreadsheet cell, reply, and resolve threads, together with co-authors.
 - **Cite** from a BibTeX bibliography (`references.bib`). Paste entries from Zotero or
   Mendeley, or look them up by DOI. Citations render in the preview and in exports.
 - **Export** the whole manuscript to PDF, Word, EPUB, ODT, HTML, LaTeX or Markdown with Pandoc.
 - **Version control** without the command line:
   - commit with a message, browse the history, and compare any two versions
+  - see every branch as a **tree**, with your uncommitted changes as the top node
   - restore an old version of a file
   - create, switch and merge branches
   - resolve merge conflicts side by side
@@ -132,8 +139,11 @@ my-book/
 ├── manuscript/         # chapters: .md, .tex or .html
 ├── notes/              # research notes
 ├── attachments/        # images, PDFs, data
+├── .dm/comments/       # comment threads, one JSON file per document (hidden in the app)
 └── exports/            # generated files (ignored by git)
 ```
+
+Drawings (`.excalidraw`), spreadsheets (`.xlsx`, `.csv`) and any other files can live in any folder.
 
 `project.json` is committed like everything else, so chapter order and metadata are shared
 with collaborators.
@@ -171,6 +181,82 @@ To use a different citation style, upload a `.csl` file (see the
   language under **Project**: Persian puts the page, title and table of contents right-to-left.
   By default the app detects it from the text.
 - **Word export** marks Persian paragraphs and runs as right-to-left, so Word lays them out natively.
+
+## Drawings, spreadsheets, links and comments
+
+### Drawings
+
+Create a file ending in `.excalidraw` (**Files → + File → Drawing**) to get an
+[Excalidraw](https://excalidraw.com) canvas: mind maps, flowcharts, sketches. It saves
+automatically as JSON, so drawings are versioned and diffable like everything else, and work
+offline.
+
+- **Link shape to file…** connects the selected shapes to a chapter, note or spreadsheet. Click the
+  link icon on a shape to open that file. This turns a mind map into a map of your project.
+- **Save as image** writes a PNG into `attachments/`, ready to insert into a chapter with the
+  **Image** button and to appear in exports.
+
+![An Excalidraw drawing open in the app](docs/images/drawing.png)
+
+### Spreadsheets
+
+`.xlsx` (Excel) and `.csv`/`.tsv` files open in a grid editor:
+
+![An Excel workbook in the spreadsheet editor, with live formulas](docs/images/spreadsheet.png)
+
+- Type a value, or `=` to start a formula: arithmetic, `&`, comparisons, ranges, other sheets
+  (`Sheet2!A1`), and common functions (`SUM`, `AVERAGE`, `MIN`, `MAX`, `COUNT`, `COUNTA`, `COUNTIF`,
+  `SUMIF`, `AVERAGEIF`, `IF`, `IFERROR`, `AND`, `OR`, `ROUND`, `CONCAT`, `LEFT`, `MID`, `LEN`…).
+  Results update as you type. For functions the app doesn't know, it shows the value Excel last saved.
+- Arrow keys, <kbd>Enter</kbd>, <kbd>Tab</kbd>, <kbd>F2</kbd>, <kbd>Delete</kbd>, undo/redo, and
+  shift-click or shift-arrows to select a range. Copy and paste work with Excel, LibreOffice and
+  Google Sheets.
+- Insert or delete rows and columns, sort by a column, and add, rename (double-click the tab) or
+  delete sheets in Excel files.
+- Excel files are edited **in place, cell by cell**: formatting, column widths, charts and anything
+  else the grid doesn't show are kept. Excel recalculates formula results when it next opens the file.
+- CSV files keep their delimiter (`,` `;` or tab). As plain text, they diff and merge line by line.
+  Excel files are binary, so a merge conflict means choosing one side.
+- Files over 10,000 rows or 200 columns open read-only.
+
+### Links, backlinks and the graph
+
+Links are found in what you write: Markdown links (`[text](../notes/a.md)`) and
+`[[wiki links]]` (by file name or title), links in rich text, LaTeX `\input`, `\include`,
+`\includegraphics` and `\href`, and links on drawing shapes. Use **Link to file…** in the editor
+toolbar to insert one, and <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+click a link to open the file.
+
+The **Links** panel of each file lists where it links to and its **backlinks** (files linking to
+it). **+ Link** adds a link between any two files, including spreadsheets, PDFs and images, without
+changing their content. These are stored in `project.json` and follow renames.
+
+**Graph** in the top bar shows every file as a dot, colored by type, with arrows for links (dashed
+for links added in the Links panel). Click a dot to open the file; hover to highlight its neighbours;
+drag and scroll to explore. Chapters of the manuscript have a ring.
+
+![The link graph of a project](docs/images/graph.png)
+
+### Comments
+
+Select some text in a Markdown, LaTeX, rich-text or plain-text file and press **Comment** (or
+<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd>). In a spreadsheet, select a cell and press **Comment**.
+The text gets a yellow highlight, and the thread appears in the **Comments** panel, where you and
+co-authors can reply, edit, resolve and reopen. Click a highlight to jump to its thread, and a
+thread to jump to its text.
+
+Comments are saved in `.dm/comments/` and committed with your work, so collaborators see them after
+they pull. Each thread remembers the quoted text and a little context around it, so it stays
+attached while the text is edited; if the passage is deleted, the thread is marked *text changed*.
+Comments are not included in exports.
+
+### The commit tree
+
+**Tree** in the top bar draws all branches, local and remote, as lanes that split and merge. The top
+node is the **working tree**: your uncommitted changes (click it to review and commit). Click a
+commit to see its changes, double-click a branch label to switch to it, or start a new branch from
+any commit.
+
+![The commit tree, with uncommitted changes as the top node and a merged branch](docs/images/tree.png)
 
 ## Callouts and code blocks
 
@@ -324,7 +410,15 @@ translation goes in `src/locales/fa.ts`.
   project registry, your git identity, access tokens, package sources and which
   environment each project or notebook uses. Everything else lives in the repositories.
 - **Frontend:** React, TypeScript and Vite. It uses CodeMirror 6 for Markdown, LaTeX and
-  notebook cells, and TipTap for rich text.
+  notebook cells, TipTap for rich text, Excalidraw for drawings (loaded on demand; its fonts are
+  copied to `public/excalidraw/` by `scripts/copy-vendor.mjs` so they work offline) and d3-force
+  for the link graph.
+- **Spreadsheets:** `services/sheets.py` reads CSV with the `csv` module and Excel with openpyxl,
+  and writes only the cells that changed. Formulas are evaluated in the browser
+  (`src/sheets/formula.ts`).
+- **Links and comments:** `services/links.py` scans files for links and builds the graph;
+  `services/comments.py` stores threads per file. Comment anchors are text quotes with context
+  (`src/editors/commentMarks.ts`), highlighted with CodeMirror decorations and a ProseMirror plugin.
 - **Notebooks:** `services/kernels.py` keeps one Jupyter kernel per open notebook in the
   server process. The app therefore runs as a single process with threads (waitress).
   Live widgets use a small bridge: the browser long-polls `kernel/events/` for kernel

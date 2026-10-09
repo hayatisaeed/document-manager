@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle } from "react";
+import { forwardRef, useImperativeHandle, useRef } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import { Extension, Node, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
@@ -7,6 +7,7 @@ import { TableKit } from "@tiptap/extension-table";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { t } from "../i18n";
+import { CommentMarks } from "./commentMarks";
 
 export const CALLOUT_TYPES = ["note", "tip", "important", "warning", "danger", "example", "quote"] as const;
 export const CALLOUT_LABEL: Record<string, string> = {
@@ -169,9 +170,14 @@ interface Props {
   value: string;
   onChange: (html: string) => void;
   resolveSrc: (src: string) => string;
+  onCommentClick?: (threadId: string) => void;
+  /** Extra toolbar buttons (e.g. link to a document, comment). */
+  toolbarExtra?: React.ReactNode;
 }
 
-const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor({ value, onChange, resolveSrc }, ref) {
+const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor({ value, onChange, resolveSrc, onCommentClick, toolbarExtra }, ref) {
+  const commentClick = useRef<((id: string) => void) | null>(null);
+  commentClick.current = onCommentClick ?? null;
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ link: { openOnClick: false }, codeBlock: false }),
@@ -181,6 +187,7 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor({ val
       Citation,
       Callout,
       HalfSpace,
+      CommentMarks.configure({ onClick: commentClick }),
     ],
     content: value,
     shouldRerenderOnTransaction: true,
@@ -267,6 +274,8 @@ const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor({ val
         <span className="tb-sep" />
         {btn("↶", () => c().undo().run(), false, t("Undo"))}
         {btn("↷", () => c().redo().run(), false, t("Redo"))}
+        {toolbarExtra && <span className="tb-sep" />}
+        {toolbarExtra}
       </div>
       <EditorContent editor={editor} className="rich-content prose" />
     </div>
