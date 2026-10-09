@@ -34,11 +34,20 @@ def configure_environment() -> None:
         "DM_SECRET_KEY": key_file.read_text(encoding="utf-8").strip(),
         "DM_ALLOWED_HOSTS": "127.0.0.1,localhost",
         "DJANGO_SETTINGS_MODULE": "config.settings",
+        # Environments the app creates stay in the program folder (not in a synced Documents folder).
+        "DM_ENVS_DIR": str(HERE / "envs"),
+        # Mirror and proxy chosen in the installer: the app starts with them (Settings can change them).
+        "DM_PACKAGE_DEFAULTS": json.dumps(CONFIG.get("package_sources") or {}),
     })
     # Tools installed by the installer (pandoc, portable git, TinyTeX) come first.
     extra = [d for d in CONFIG.get("path_dirs", []) if Path(d).exists()]
-    # The venv's own bin folder, so Jupyter kernels find the right Python.
+    # The environment's own folders, so Jupyter kernels find the right Python. A conda
+    # environment started without "conda activate" also needs its DLL folders on Windows.
+    prefix = Path(sys.prefix)
     extra.append(str(Path(sys.executable).parent))
+    if sys.platform == "win32" and (prefix / "conda-meta").is_dir():
+        extra += [str(prefix / d) for d in ("Library/mingw-w64/bin", "Library/usr/bin", "Library/bin", "Scripts")
+                  if (prefix / d).is_dir()]
     os.environ["PATH"] = os.pathsep.join(extra + [os.environ.get("PATH", "")])
     sys.path.insert(0, str(BACKEND))
     os.chdir(BACKEND)

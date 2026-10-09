@@ -44,6 +44,10 @@ splits them out.
    - optionally TinyTeX with the LaTeX packages for PDF export, including Persian typesetting (about 400 MB)
    - optionally numpy, pandas, matplotlib and scipy for notebooks
    - a desktop shortcut and an app-menu entry
+
+   On the options page you can also install into an **existing conda environment or venv**
+   instead of a private one, and choose a **PyPI mirror** and a **proxy** for the downloads
+   (see below).
 4. Start **Document Manager** from the shortcut. It opens in your browser at
    <http://127.0.0.1:8765>, and a small window lets you reopen or stop it.
 5. Go to **Settings**: enter your name and email (recorded on every commit), and choose
@@ -54,12 +58,45 @@ To remove the app, run the installer again and choose **Uninstall**, or run
 `python installer/install.py --uninstall`. Your projects are never deleted.
 `--cli` runs the installer in the terminal, which is useful on a machine without a display.
 
+### Installing into Anaconda, Miniconda or an existing venv
+
+The app can live in a conda environment or virtual environment you already manage. Its
+packages (Django, Jupyter…) are installed there instead of in a private venv:
+
+```sh
+conda create -n docmanager python=3.12 pip     # or use an environment you already have
+conda activate docmanager
+python installer/install.py --use-current-env  # or: --env /path/to/env from any Python
+```
+
+The same works from an activated venv. The graphical installer offers it too and fills
+in the environment it was started from. Uninstalling removes the program but leaves that
+environment and its packages alone.
+
+Either way, **notebooks can run in any conda environment or venv**, chosen in the app; see
+[Python environments and packages](#python-environments-and-packages).
+
+### Mirrors and proxy (for example in Iran or China)
+
+If pypi.org is slow or blocked, pick a mirror in the installer, or pass one on the command line:
+
+```sh
+python installer/install.py --pip-index runflare           # a name from the list below, or a URL
+python installer/install.py --pip-index https://my.mirror/simple --proxy http://127.0.0.1:8080
+```
+
+The proxy is used for every download (Python packages, Pandoc, TinyTeX, Node.js). The app
+starts with the same settings, and you can change them later in **Settings → Package
+sources and mirrors**.
+
 ### Alternative: Docker
 
 If you already use Docker, `docker compose up -d --build` builds an image with
 everything included and serves the app at <http://localhost:8000>. Projects are kept
 in `./data`. Set `INSTALL_LATEX: "false"` in `docker-compose.yml` for a much smaller
-image without PDF export.
+image without PDF export. To build through mirrors, set the `PIP_INDEX_URL` and
+`NPM_REGISTRY` build arguments there. Inside the container you can create virtual
+environments (stored in `./data/envs`); conda is not included in the image.
 
 ## Working with a collaborator
 
@@ -161,8 +198,10 @@ Add a chapter or file with the **Jupyter notebook** format, or upload an existin
 - **Diffs stay readable:** the Changes and History views show notebooks as cells of code
   and text, with outputs summarised, instead of raw JSON.
 - Notebooks can be chapters of a book: exports include their text, code and outputs.
-- To use another Python environment, register it as a kernel with
-  `python -m ipykernel install --user --name myenv`. It then appears in the kernel menu.
+- **Choose the Python environment** in the notebook toolbar: the project's environment
+  (the default), any conda environment or venv on the computer, or another installed Jupyter
+  kernel (R, Julia…). If the environment lacks `ipykernel`, the app offers to install it.
+  **Packages…** opens the package manager. `%pip install` in a cell uses your mirror settings.
 - **Interactive output:**
   - **ipywidgets** are live, connected to the kernel: sliders, dropdowns, buttons, `@interact`,
     and `Output` widgets.
@@ -178,6 +217,68 @@ Add a chapter or file with the **Jupyter notebook** format, or upload an existin
   side by side, with buttons for *Keep mine*, *Keep theirs*, *Keep both* or *Remove the cell*.
 - Static HTML and Markdown in outputs are sanitised, so a notebook from a collaborator can't
   run scripts in the app.
+
+## Python environments and packages
+
+Open **Python environments** from the projects page (or **Packages…** in a notebook).
+
+- **Environments found automatically:** the app's own environment, every conda environment
+  (Anaconda, Miniconda, Miniforge or Mambaforge on PATH, in its usual folder, or at a path you
+  set in Settings), venvs the app created, and `~/.virtualenvs`. Add any other one (such as a
+  project's `.venv`) with **Add existing…**.
+- **Create** a conda environment with the Python version you want, or a venv based on any
+  Python you have. `ipykernel` is always included. conda environments created here are ordinary
+  named environments, so `conda activate <name>` works in your terminal too.
+- **Packages:** see what's installed (pip and conda packages, with versions), look up the
+  versions available, then install, upgrade or remove packages with pip or conda. Every task
+  shows its live output and can be cancelled. mamba is used for conda environments when it's
+  installed, because it's much faster.
+- **Delete** environments the app created, or remove others from the list without touching them.
+  The app's own environment and conda's `base` are protected.
+
+### Per project, and with co-authors
+
+In **Project**, choose the project's environment; its notebooks use it unless a notebook picks
+its own. The choice is stored on this computer only, because environment paths differ between
+people. To share the *contents* of the environment, press **Save environment file**:
+
+- for a conda environment it writes `environment.yml` (the packages you asked for, plus pip
+  packages), which works on Windows, macOS and Linux;
+- for a venv it writes `requirements.txt` (`pip freeze`).
+
+Commit the file. Your co-author then presses **Create conda environment from
+environment.yml** (or **Create venv from requirements.txt**) in the same panel, and the new
+environment becomes their project environment.
+
+### Package sources (mirrors)
+
+**Settings → Package sources and mirrors** controls where pip and conda download from. It
+applies to everything the app runs: installs, new environments, and `%pip` in notebooks. Your
+own `pip.conf` and `.condarc` are never changed.
+
+- **pip:** pip's own settings (the default), a mirror from the list, or any custom index URL,
+  plus extra index URLs and trusted hosts.
+- **conda:** conda's own settings (`.condarc`), a conda-forge mirror from the list, or your own
+  list of channels.
+- **Proxy:** an HTTP/HTTPS proxy, and hosts to reach directly.
+- **Test** measures the response time of each source, so you can pick the fastest one that
+  works from your network.
+
+| Mirror | pip | conda |
+| --- | --- | --- |
+| Official (pypi.org, conda-forge, prefix.dev) | ✓ | ✓ |
+| Runflare (Iran) | ✓ | |
+| Liara (Iran) | ✓ | |
+| Kargadan (Iran) | ✓ | ✓ conda-forge |
+| ITO, Information Technology Organization (Iran) | ✓ | |
+| NovinCloud (Iran) | ✓ | |
+| Ferdowsi Cloud (Iran) | ✓ | |
+| Chabokan (Iran) | ✓ | |
+| DevNeeds (Iran) | ✓ | |
+| Tsinghua TUNA, Alibaba Cloud, USTC (China) | ✓ | ✓ conda-forge |
+
+These mirrors are run by third parties. They can be slow, out of date or go offline, so use
+**Test**, and switch back to the official sources if a mirror misbehaves.
 
 ## Themes
 
@@ -220,7 +321,8 @@ translation goes in `src/locales/fa.ts`.
 - **Backend:** Django and Django REST Framework (`backend/core`). It is a thin layer over
   the git CLI (`services/git.py`), the filesystem (`services/project_files.py`),
   Pandoc (`services/pandoc.py`) and BibTeX (`services/bib.py`). SQLite stores only the
-  project registry, your git identity and access tokens. Everything else lives in the repositories.
+  project registry, your git identity, access tokens, package sources and which
+  environment each project or notebook uses. Everything else lives in the repositories.
 - **Frontend:** React, TypeScript and Vite. It uses CodeMirror 6 for Markdown, LaTeX and
   notebook cells, and TipTap for rich text.
 - **Notebooks:** `services/kernels.py` keeps one Jupyter kernel per open notebook in the
@@ -228,6 +330,12 @@ translation goes in `src/locales/fa.ts`.
   Live widgets use a small bridge: the browser long-polls `kernel/events/` for kernel
   messages and posts widget messages to `kernel/comm/`. The official
   `@jupyter-widgets/html-manager` renders them (`frontend/src/components/widgets.ts`).
+- **Environments and packages:** `services/envs.py` finds conda environments and venvs and runs
+  pip/conda. `services/packaging.py` holds the mirror and proxy settings, which reach commands
+  as environment variables (`PIP_INDEX_URL`, `HTTPS_PROXY`…) and `--override-channels -c …`.
+  Each environment is a kernel named `dm-env-<id>` that runs `python -m ipykernel_launcher` with
+  the environment activated, so no kernelspec has to be installed. Long commands run as
+  background jobs (`services/jobs.py`), and the browser polls them for live output.
 - **Notebook merges:** `services/nbmerge.py` does a three-way merge per cell, matching cells by
   their nbformat id, or by content for older notebooks.
 - **Export:** each chapter is converted to a Pandoc AST and the ASTs are concatenated.
@@ -250,3 +358,5 @@ The app is designed for **one person on their own computer**:
   Notebook Markdown and HTML outputs are sanitised with DOMPurify.
 - Notebook code runs only when you press Run, with your user's permissions, just as in
   Jupyter. Read code from others before running it.
+- Installing a package runs its install scripts. Install from sources you trust. A mirror can
+  serve whatever it likes, so prefer well-known mirrors and keep HTTPS.

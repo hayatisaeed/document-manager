@@ -10,13 +10,17 @@ Run with Python 3.10 or newer:
 It installs everything else the app needs into its own folder, without
 touching system settings and without administrator rights:
 
-* a private Python environment with the app's packages (Django, Jupyter…)
+* a private Python environment with the app's packages (Django, Jupyter…),
+  or, if you prefer, an existing conda environment or virtual environment
 * Pandoc (preview and export), if a recent one is not already installed
 * Git for Windows (portable MinGit) on Windows, if git is missing
 * optionally TinyTeX with the LaTeX packages for PDF export (incl. Persian)
 * optionally data-science packages for notebooks (numpy, pandas, matplotlib)
 * the web interface (built with a temporary copy of Node.js if needed)
 * a desktop shortcut / app-menu entry that starts the app
+
+Downloads can go through a PyPI mirror and an HTTP(S) proxy (``--pip-index``,
+``--proxy``); the app keeps using them for the packages it installs later.
 """
 from __future__ import annotations
 
@@ -30,7 +34,6 @@ import ssl
 import subprocess
 import sys
 import tarfile
-import tempfile
 import threading
 import traceback
 import urllib.request
@@ -65,6 +68,22 @@ TEX_PACKAGES = [
     "iftex", "zref", "needspace", "footnotehyper", "amsmath", "amsfonts", "tools",
 ]
 
+# PyPI mirrors offered in the installer (the app's Settings page has the full list with a speed test).
+PIP_MIRRORS = [
+    ("PyPI (official)", ""),
+    ("Runflare (Iran)", "https://mirror-pypi.runflare.com/simple"),
+    ("Liara (Iran)", "https://package-mirror.liara.ir/repository/pypi/simple"),
+    ("Kargadan (Iran)", "https://mirror.kargadan.ir/repository/pypi-group/simple"),
+    ("ITO (Iran)", "https://archive.ito.gov.ir/mirror2/python/simple"),
+    ("NovinCloud (Iran)", "https://mirror.novin.cloud/artifactory/api/pypi/pypi/simple"),
+    ("Ferdowsi Cloud (Iran)", "https://mirror.ferdowsi.cloud/artifactory/api/pypi/pip-virtual/simple"),
+    ("Chabokan (Iran)", "https://mirror2.chabokan.net/registry/pypi/simple"),
+    ("DevNeeds (Iran)", "https://pypi.devneeds.ir/simple"),
+    ("Tsinghua (China)", "https://pypi.tuna.tsinghua.edu.cn/simple"),
+    ("Aliyun (China)", "https://mirrors.aliyun.com/pypi/simple"),
+    ("USTC (China)", "https://mirrors.ustc.edu.cn/pypi/simple"),
+]
+
 SYSTEM = platform.system()  # "Windows", "Darwin", "Linux"
 MACHINE = platform.machine().lower()
 ARM = MACHINE in ("arm64", "aarch64")
@@ -86,14 +105,37 @@ def default_data_dir() -> Path:
     return (docs if docs.exists() else Path.home()) / "Document Manager"
 
 
-def venv_python(install: Path) -> Path:
+def env_python(prefix: Path, windowed: bool = False) -> Path | None:
+    """The Python of a conda environment or virtual environment (``prefix`` is its folder)."""
+    if SYSTEM == "Windows":
+        exe = "pythonw.exe" if windowed else "python.exe"
+        candidates = [prefix / exe, prefix / "Scripts" / exe]  # conda, venv
+    else:
+        candidates = [prefix / "bin" / "python", prefix / "bin" / "python3"]
+    return next((c for c in candidates if c.exists()), None)
+
+
+def current_env() -> Path | None:
+    """The conda environment or venv this installer runs in, if any."""
+    prefix = Path(sys.prefix)
+    if sys.prefix != sys.base_prefix or (prefix / "conda-meta").is_dir():
+        return prefix
+    return None
+
+
+def venv_python(install: Path, python_env: str = "") -> Path:
+    """The app's Python: the private venv, or the existing environment chosen at install time."""
+    if python_env:
+        return env_python(Path(python_env)) or Path(python_env)
     if SYSTEM == "Windows":
         return install / "venv" / "Scripts" / "python.exe"
     return install / "venv" / "bin" / "python"
 
 
-def venv_pythonw(install: Path) -> Path:
+def venv_pythonw(install: Path, python_env: str = "") -> Path:
     """Windows: pythonw.exe starts without a console window."""
+    if python_env:
+        return env_python(Path(python_env), windowed=True) or venv_python(install, python_env)
     if SYSTEM == "Windows":
         return install / "venv" / "Scripts" / "pythonw.exe"
     return venv_python(install)
@@ -109,6 +151,10 @@ class Options:
     science: bool = True
     shortcut: bool = True
     port: int = DEFAULT_PORT
+    # Folder of an existing conda env / venv to install into; empty = a private venv.
+    python_env: str = ""
+    pip_index_url: str = ""  # PyPI mirror; empty = pip's own settings
+    proxy: str = ""  # HTTP(S) proxy for every download
 
 
 class InstallError(Exception):
@@ -129,11 +175,26 @@ class Installer:
         self.progress = progress
         self.path_dirs: list[str] = []
         self.ssl_context: ssl.SSLContext | None = None
+        self.python_env = str(Path(opts.python_env).expanduser().resolve()) if opts.python_env else ""
+        self.python = venv_python(self.install, self.python_env)
+
+    def network_env(self) -> dict:
+        """Variables that send pip, npm and tlmgr through the chosen mirror and proxy."""
+        env = {}
+        if self.opts.pip_index_url:
+            env["PIP_INDEX_URL"] = self.opts.pip_index_url
+            if self.opts.pip_index_url.startswith("http://"):
+                env["PIP_TRUSTED_HOST"] = self.opts.pip_index_url.split("/")[2]
+        if self.opts.proxy:
+            for key in ("http_proxy", "https_proxy"):
+                env[key] = env[key.upper()] = self.opts.proxy
+            env["npm_config_proxy"] = env["npm_config_https_proxy"] = self.opts.proxy
+        return env
 
     # -- running commands
     def run(self, cmd: list[str], cwd: Path | None = None, env: dict | None = None, quiet=False) -> str:
         self.log("$ " + " ".join(str(c) for c in cmd))
-        full_env = {**os.environ, **(env or {})}
+        full_env = {**os.environ, **self.network_env(), **(env or {})}
         if self.path_dirs:
             full_env["PATH"] = os.pathsep.join(self.path_dirs + [full_env.get("PATH", "")])
         proc = subprocess.Popen([str(c) for c in cmd], cwd=cwd, env=full_env, stdout=subprocess.PIPE,
@@ -154,8 +215,11 @@ class Installer:
         self.log(f"Downloading {url}")
         dest.parent.mkdir(parents=True, exist_ok=True)
         req = urllib.request.Request(url, headers={"User-Agent": "DocumentManager-Installer"})
+        proxies = {"http": self.opts.proxy, "https": self.opts.proxy} if self.opts.proxy else None
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler(proxies),
+                                             urllib.request.HTTPSHandler(context=self.ssl_context))
         try:
-            resp = urllib.request.urlopen(req, timeout=60, context=self.ssl_context)
+            resp = opener.open(req, timeout=60)
         except ssl.SSLError as exc:
             raise InstallError(f"Secure connection failed ({exc}). On macOS, run “Install Certificates.command” "
                                "from your Python folder, then try again.") from exc
@@ -213,7 +277,8 @@ class Installer:
         steps = [
             ("Checking this computer", self.check),
             ("Copying the application", self.copy_app),
-            ("Creating a private Python environment", self.make_venv),
+            ("Preparing the Python environment" if self.python_env else "Creating a private Python environment",
+             self.make_venv),
             ("Installing Python packages", self.pip_install),
             ("Setting up Git", self.setup_git),
             ("Setting up Pandoc", self.setup_pandoc),
@@ -246,6 +311,12 @@ class Installer:
         if not (SOURCE / "backend" / "manage.py").exists():
             raise InstallError(f"Run this installer from inside the {APP_NAME} folder (backend/ not found next to it).")
         self.log(f"Python {platform.python_version()} on {SYSTEM} {MACHINE}")
+        if self.python_env:
+            self.log(f"Installing into the existing environment {self.python_env}")
+        if self.opts.pip_index_url:
+            self.log(f"PyPI mirror: {self.opts.pip_index_url}")
+        if self.opts.proxy:
+            self.log(f"Proxy: {self.opts.proxy}")
         self.log(f"Installing from {SOURCE}")
         self.install.mkdir(parents=True, exist_ok=True)
         self.data.mkdir(parents=True, exist_ok=True)
@@ -268,14 +339,17 @@ class Installer:
         (self.install / "source.txt").write_text(str(SOURCE), encoding="utf-8")
 
     def make_venv(self):
-        py = venv_python(self.install)
-        if not py.exists():
+        py = self.python
+        if self.python_env:
+            self.use_existing_env(py)
+        elif not py.exists():
             try:
                 import venv  # noqa: F401
             except ImportError as exc:
                 raise InstallError("Python's venv module is missing. On Debian/Ubuntu: sudo apt install python3-venv") from exc
             self.run([sys.executable, "-m", "venv", self.install / "venv"])
-        self.run([py, "-m", "pip", "install", "--upgrade", "pip", "certifi"], quiet=True)
+        # Don't upgrade pip in someone else's environment (conda manages it there).
+        self.run([py, "-m", "pip", "install", *([] if self.python_env else ["--upgrade", "pip"]), "certifi"], quiet=True)
         # Use certifi's certificates for downloads (python.org's macOS Python has none by default),
         # unless the environment already points at a CA bundle (corporate proxies).
         cafile = os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE")
@@ -284,8 +358,23 @@ class Installer:
                                     capture_output=True, text=True).stdout.strip() or None
         self.ssl_context = ssl.create_default_context(cafile=cafile) if cafile else None
 
+    def use_existing_env(self, py: Path):
+        prefix = Path(self.python_env)
+        if not py.exists():
+            raise InstallError(f"No Python found in {prefix}. Choose the environment's folder (the one that "
+                               "contains bin/ or Scripts/, or conda-meta/).")
+        version = self.run([py, "-c", "import sys; print('%d.%d' % sys.version_info[:2])"], quiet=True).strip()
+        if tuple(int(x) for x in version.split(".")) < MIN_PYTHON:
+            raise InstallError(f"The environment has Python {version}; {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or newer is needed.")
+        try:
+            self.run([py, "-m", "pip", "--version"], quiet=True)
+        except InstallError as exc:
+            hint = " Run: conda install -p \"%s\" pip" % prefix if (prefix / "conda-meta").is_dir() else ""
+            raise InstallError("pip is missing in that environment." + hint) from exc
+        self.log(f"Using Python {version} from {prefix}")
+
     def pip_install(self):
-        py = venv_python(self.install)
+        py = self.python
         reqs = ["-r", self.install / "app" / "backend" / "requirements.txt"]
         if self.opts.science:
             reqs += ["-r", self.install / "app" / "backend" / "requirements-science.txt"]
@@ -429,16 +518,20 @@ class Installer:
             "data_dir": str(self.data),
             "port": self.opts.port,
             "path_dirs": self.path_dirs,
+            "python_env": self.python_env,
+            # Starting point for Settings → Package sources in the app.
+            "package_sources": {"pip_index_url": self.opts.pip_index_url,
+                                "http_proxy": self.opts.proxy, "https_proxy": self.opts.proxy},
             "options": asdict(self.opts),
         }
         (self.install / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
         shutil.rmtree(self.tools / "downloads", ignore_errors=True)
 
     def migrate(self):
-        self.run([venv_python(self.install), self.install / "launch.py", "--migrate-only"])
+        self.run([self.python, self.install / "launch.py", "--migrate-only"])
 
     def make_shortcuts(self):
-        made = create_shortcuts(self.install)
+        made = create_shortcuts(self.install, self.python_env)
         for path in made:
             self.log(f"Created {path}")
 
@@ -476,11 +569,11 @@ def desktop_dir() -> Path:
     return Path.home() / "Desktop"
 
 
-def create_shortcuts(install: Path) -> list[Path]:
+def create_shortcuts(install: Path, python_env: str = "") -> list[Path]:
     made = []
     launcher = install / "launch.py"
     if SYSTEM == "Windows":
-        target = venv_pythonw(install)
+        target = venv_pythonw(install, python_env)
         for lnk in shortcut_paths():
             lnk.parent.mkdir(parents=True, exist_ok=True)
             ps = (
@@ -498,7 +591,7 @@ def create_shortcuts(install: Path) -> list[Path]:
         macos = app / "Contents" / "MacOS"
         macos.mkdir(parents=True, exist_ok=True)
         script = macos / "DocumentManager"
-        script.write_text(f'#!/bin/sh\nexec "{venv_python(install)}" "{launcher}"\n', encoding="utf-8")
+        script.write_text(f'#!/bin/sh\nexec "{venv_python(install, python_env)}" "{launcher}"\n', encoding="utf-8")
         script.chmod(0o755)
         (app / "Contents" / "Info.plist").write_text(
             '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -516,7 +609,7 @@ def create_shortcuts(install: Path) -> list[Path]:
             "[Desktop Entry]\nType=Application\n"
             f"Name={APP_NAME}\nName[fa]=مدیر اسناد\n"
             "Comment=Write books and research with git version control\n"
-            f'Exec="{venv_python(install)}" "{launcher}"\n'
+            f'Exec="{venv_python(install, python_env)}" "{launcher}"\n'
             "Icon=accessories-text-editor\nTerminal=false\nCategories=Office;\n"
         )
         for path in shortcut_paths():
@@ -533,9 +626,10 @@ def create_shortcuts(install: Path) -> list[Path]:
 def uninstall(install: Path, log=print) -> None:
     """Remove the program and its shortcuts. Projects and the database are kept."""
     config = install / "config.json"
-    data = None
+    data = env = None
     if config.exists():
-        data = json.loads(config.read_text(encoding="utf-8")).get("data_dir")
+        saved = json.loads(config.read_text(encoding="utf-8"))
+        data, env = saved.get("data_dir"), saved.get("python_env")
     for path in shortcut_paths():
         if path.is_dir():
             shutil.rmtree(path, ignore_errors=True)
@@ -548,6 +642,8 @@ def uninstall(install: Path, log=print) -> None:
         log(f"Removed {install}")
     if data:
         log(f"Your projects were kept in {data}")
+    if env:
+        log(f"The packages installed into {env} were left there; remove them with pip or conda if you like.")
 
 
 # ---------------------------------------------------------------- graphical installer
@@ -569,7 +665,7 @@ def run_gui(opts: Options) -> int:
 
     root = tk.Tk()
     root.title(f"{APP_NAME} — Setup")
-    root.geometry("720x560")
+    root.geometry("760x720")
     root.minsize(600, 480)
     try:
         ttk.Style().theme_use("clam" if SYSTEM == "Linux" else ttk.Style().theme_use())
@@ -651,6 +747,42 @@ def run_gui(opts: Options) -> int:
     ttk.Checkbutton(box, text="PDF export, including Persian typesetting (TinyTeX, about 400 MB)", variable=pdf_var).pack(anchor="w")
     ttk.Checkbutton(box, text="Data-science packages for notebooks: numpy, pandas, matplotlib, scipy (about 250 MB)", variable=sci_var).pack(anchor="w")
     ttk.Checkbutton(box, text="Desktop shortcut and app-menu entry", variable=sc_var).pack(anchor="w")
+
+    # Python environment: private venv (default) or an existing conda env / venv.
+    here = current_env()
+    env_mode = tk.StringVar(value="existing" if opts.python_env else "private")
+    env_var = tk.StringVar(value=opts.python_env or (str(here) if here else ""))
+    envbox = ttk.LabelFrame(options, text="Python environment", padding=10)
+    envbox.pack(fill="x")
+    ttk.Radiobutton(envbox, text="A private environment for the app (recommended)", value="private",
+                    variable=env_mode).pack(anchor="w")
+    ttk.Radiobutton(envbox, text="An existing conda environment or virtual environment (venv):", value="existing",
+                    variable=env_mode).pack(anchor="w")
+    env_row = ttk.Frame(envbox)
+    env_row.pack(fill="x", padx=(22, 0))
+    ttk.Entry(env_row, textvariable=env_var).pack(side="left", fill="x", expand=True)
+    ttk.Button(env_row, text="Browse…", command=lambda: (env_var.set(filedialog.askdirectory(initialdir=env_var.get() or str(Path.home())) or env_var.get()), env_mode.set("existing"))).pack(side="left", padx=(6, 0))
+    ttk.Label(envbox, foreground="#667180", wraplength=660, text=(
+        "The app's packages are installed into that environment. Either way, notebooks can later run in any "
+        "conda env or venv, chosen in the app." + (f"\nThis installer runs in {here}." if here else ""))).pack(anchor="w")
+
+    # Network: PyPI mirror and proxy.
+    netbox = ttk.LabelFrame(options, text="Downloads (optional)", padding=10)
+    netbox.pack(fill="x", pady=(12, 0))
+    names = [name for name, _ in PIP_MIRRORS]
+    current = next((n for n, u in PIP_MIRRORS if u == opts.pip_index_url), opts.pip_index_url or names[0])
+    mirror_var = tk.StringVar(value=current)
+    proxy_var = tk.StringVar(value=opts.proxy)
+    grid = ttk.Frame(netbox)
+    grid.pack(fill="x")
+    ttk.Label(grid, text="PyPI mirror:").grid(row=0, column=0, sticky="w")
+    ttk.Combobox(grid, textvariable=mirror_var, values=names).grid(row=0, column=1, sticky="we", padx=6)
+    ttk.Label(grid, text="Proxy:").grid(row=1, column=0, sticky="w", pady=(6, 0))
+    ttk.Entry(grid, textvariable=proxy_var).grid(row=1, column=1, sticky="we", padx=6, pady=(6, 0))
+    grid.columnconfigure(1, weight=1)
+    ttk.Label(netbox, foreground="#667180", wraplength=660, text=(
+        "Pick a mirror, or type the address of another one (…/simple). The proxy, e.g. http://127.0.0.1:8080, is used "
+        "for every download. The app keeps both settings; change them later in Settings.")).pack(anchor="w")
     nav2 = ttk.Frame(options)
     nav2.pack(side="bottom", fill="x")
 
@@ -675,8 +807,14 @@ def run_gui(opts: Options) -> int:
     result = {"code": 1}
 
     def start():
+        mirror = mirror_var.get().strip()
         o = Options(install_dir=install_var.get(), data_dir=data_var.get(), pdf=pdf_var.get(),
-                    science=sci_var.get(), shortcut=sc_var.get(), port=opts.port)
+                    science=sci_var.get(), shortcut=sc_var.get(), port=opts.port,
+                    python_env=env_var.get().strip() if env_mode.get() == "existing" else "",
+                    pip_index_url=dict(PIP_MIRRORS).get(mirror, mirror), proxy=proxy_var.get().strip())
+        if env_mode.get() == "existing" and not o.python_env:
+            messagebox.showerror("Python environment", "Choose the folder of the environment to install into.")
+            return
         show("progress")
         inst = Installer(o, log=lambda m: events.put(("log", m)),
                          progress=lambda f, label: events.put(("progress", (f, label))))
@@ -710,7 +848,7 @@ def run_gui(opts: Options) -> int:
                     close_btn["state"] = "normal"
 
                     def launch():
-                        subprocess.Popen([str(venv_pythonw(inst.install)), str(inst.install / "launch.py")],
+                        subprocess.Popen([str(venv_pythonw(inst.install, inst.python_env)), str(inst.install / "launch.py")],
                                          cwd=inst.install, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                         root.destroy()
 
@@ -741,6 +879,9 @@ def run_cli(opts: Options, assume_yes: bool) -> int:
     if not assume_yes:
         print(f"Program folder: {opts.install_dir}\nData folder:    {opts.data_dir}")
         print(f"PDF export (TinyTeX): {'yes' if opts.pdf else 'no'}   Data-science packages: {'yes' if opts.science else 'no'}")
+        print(f"Python environment: {opts.python_env or 'a private venv in the program folder'}")
+        if opts.pip_index_url or opts.proxy:
+            print(f"PyPI mirror: {opts.pip_index_url or 'default'}   Proxy: {opts.proxy or 'none'}")
         if input("Continue? [Y/n] ").strip().lower() not in ("", "y", "yes"):
             return 1
 
@@ -753,7 +894,8 @@ def run_cli(opts: Options, assume_yes: bool) -> int:
         print(f"\nInstallation failed:\n{exc}", file=sys.stderr)
         return 1
     launcher = Path(opts.install_dir) / "launch.py"
-    print(f"\nStart the app from the shortcut, or run:\n  \"{venv_python(Path(opts.install_dir))}\" \"{launcher}\"")
+    python = venv_python(Path(opts.install_dir), str(Path(opts.python_env).expanduser().resolve()) if opts.python_env else "")
+    print(f"\nStart the app from the shortcut, or run:\n  \"{python}\" \"{launcher}\"")
     return 0
 
 
@@ -767,11 +909,28 @@ def main(argv=None) -> int:
     parser.add_argument("--no-science", action="store_true", help="skip numpy/pandas/matplotlib/scipy")
     parser.add_argument("--no-shortcut", action="store_true")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--env", metavar="FOLDER", default="",
+                        help="install into this existing conda environment or venv instead of a private one")
+    parser.add_argument("--use-current-env", action="store_true",
+                        help="install into the conda environment or venv this installer runs in")
+    parser.add_argument("--pip-index", metavar="URL", default="",
+                        help="PyPI mirror (simple index URL), or a name: " + ", ".join(
+                            n.split(" (")[0].lower().replace(" ", "-") for n, u in PIP_MIRRORS if u))
+    parser.add_argument("--proxy", metavar="URL", default="", help="HTTP(S) proxy for all downloads")
     parser.add_argument("--uninstall", action="store_true", help="remove the program (keeps your projects)")
     args = parser.parse_args(argv)
 
+    python_env = args.env
+    if args.use_current_env:
+        if not current_env():
+            print("This installer is not running inside a conda environment or venv.", file=sys.stderr)
+            return 1
+        python_env = str(current_env())
+    by_name = {n.split(" (")[0].lower().replace(" ", "-"): u for n, u in PIP_MIRRORS}
+    pip_index = by_name.get(args.pip_index.lower(), args.pip_index)
     opts = Options(install_dir=args.install_dir, data_dir=args.data_dir, pdf=not args.no_pdf,
-                   science=not args.no_science, shortcut=not args.no_shortcut, port=args.port)
+                   science=not args.no_science, shortcut=not args.no_shortcut, port=args.port,
+                   python_env=python_env, pip_index_url=pip_index, proxy=args.proxy)
     if args.uninstall:
         uninstall(Path(args.install_dir).expanduser())
         return 0

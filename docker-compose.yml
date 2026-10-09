@@ -7,6 +7,9 @@ services:
         INSTALL_LATEX: "true"
         # numpy, pandas, matplotlib and scipy for running notebooks.
         INSTALL_SCIENCE: "true"
+        # Optional mirrors for building the image (the app's own mirror settings are in Settings).
+        # PIP_INDEX_URL: "https://mirror-pypi.runflare.com/simple"
+        # NPM_REGISTRY: "https://registry.npmmirror.com"
     image: document-manager
     container_name: document-manager
     restart: unless-stopped
