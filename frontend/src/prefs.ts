@@ -15,6 +15,8 @@ export interface Prefs {
   lang: Lang;
   theme: Theme;
   calendar: Calendar;
+  /** Markdown editor shows formatting in place (Obsidian-style) instead of plain source. */
+  mdLive: boolean;
 }
 
 const KEY = "dm:prefs";
@@ -22,9 +24,9 @@ const KEY = "dm:prefs";
 function load(): Prefs {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "{}");
-    return { lang: raw.lang === "fa" ? "fa" : "en", theme: raw.theme ?? "system", calendar: raw.calendar ?? "auto" };
+    return { lang: raw.lang === "fa" ? "fa" : "en", theme: raw.theme ?? "system", calendar: raw.calendar ?? "auto", mdLive: raw.mdLive ?? true };
   } catch {
-    return { lang: "en", theme: "system", calendar: "auto" };
+    return { lang: "en", theme: "system", calendar: "auto", mdLive: true };
   }
 }
 
