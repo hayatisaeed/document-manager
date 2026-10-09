@@ -4,6 +4,8 @@ A local app for writing books and research, with git built in. Every project is 
 git repository, so you get a full version history. You can try ideas on branches,
 and you can work with a co-author by syncing through GitHub or GitLab.
 
+![A Markdown chapter with live preview, and the Links panel showing its links and backlinks](docs/images/editor.png)
+
 - **Write** in Markdown, LaTeX, rich text (a Word-like editor) or **Jupyter notebooks**.
   Each chapter can use its own format.
 - **Persian and English**, together. The interface is available in English or Persian
@@ -194,9 +196,13 @@ offline.
 - **Save as image** writes a PNG into `attachments/`, ready to insert into a chapter with the
   **Image** button and to appear in exports.
 
+![An Excalidraw drawing open in the app](docs/images/drawing.png)
+
 ### Spreadsheets
 
 `.xlsx` (Excel) and `.csv`/`.tsv` files open in a grid editor:
+
+![An Excel workbook in the spreadsheet editor, with live formulas](docs/images/spreadsheet.png)
 
 - Type a value, or `=` to start a formula: arithmetic, `&`, comparisons, ranges, other sheets
   (`Sheet2!A1`), and common functions (`SUM`, `AVERAGE`, `MIN`, `MAX`, `COUNT`, `COUNTA`, `COUNTIF`,
@@ -228,6 +234,8 @@ changing their content. These are stored in `project.json` and follow renames.
 for links added in the Links panel). Click a dot to open the file; hover to highlight its neighbours;
 drag and scroll to explore. Chapters of the manuscript have a ring.
 
+![The link graph of a project](docs/images/graph.png)
+
 ### Comments
 
 Select some text in a Markdown, LaTeX, rich-text or plain-text file and press **Comment** (or
@@ -247,6 +255,8 @@ Comments are not included in exports.
 node is the **working tree**: your uncommitted changes (click it to review and commit). Click a
 commit to see its changes, double-click a branch label to switch to it, or start a new branch from
 any commit.
+
+![The commit tree, with uncommitted changes as the top node and a merged branch](docs/images/tree.png)
 
 ## Callouts and code blocks
 
