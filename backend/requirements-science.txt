@@ -1,0 +1,6 @@
+# Optional packages for running data-analysis notebooks.
+numpy
+pandas
+matplotlib
+scipy
+plotly

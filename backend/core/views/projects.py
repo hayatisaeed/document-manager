@@ -83,7 +83,7 @@ def project_detail(request, slug):
         return Response({**_summary(project), "manifest": pf.read_manifest(project.path)})
     if request.method == "PATCH":
         manifest = pf.read_manifest(project.path)
-        for key in ("title", "subtitle", "authors", "kind", "description", "export"):
+        for key in ("title", "subtitle", "authors", "kind", "description", "export", "language"):
             if key in request.data:
                 manifest[key] = request.data[key]
         pf.write_manifest(project.path, manifest)
@@ -121,12 +121,22 @@ def unregistered_folders(request):
 def app_settings(request):
     s = AppSettings.load()
     if request.method == "PUT":
-        s.author_name = request.data.get("author_name", s.author_name).strip()
-        s.author_email = request.data.get("author_email", s.author_email).strip()
+        d = request.data
+        s.author_name = d.get("author_name", s.author_name).strip()
+        s.author_email = d.get("author_email", s.author_email).strip()
+        if d.get("ui_language") in ("en", "fa"):
+            s.ui_language = d["ui_language"]
+        if d.get("theme") in ("system", "light", "dark"):
+            s.theme = d["theme"]
+        if d.get("calendar") in ("auto", "gregorian", "jalali"):
+            s.calendar = d["calendar"]
         s.save()
     return Response({
         "author_name": s.author_name,
         "author_email": s.author_email,
+        "ui_language": s.ui_language,
+        "theme": s.theme,
+        "calendar": s.calendar,
         "capabilities": pandoc.capabilities(),
         "projects_dir": str(settings.PROJECTS_DIR),
     })

@@ -1,12 +1,14 @@
 from django.urls import path
 
-from .views import files, git_views, projects
+from .views import files, git_views, notebook_views, projects
 
 P = "projects/<slug:slug>/"
 
 urlpatterns = [
     path("settings/", projects.app_settings),
     path("credentials/", projects.credential_list),
+    path("fonts/<str:name>", files.font),
+    path("kernels/", notebook_views.kernel_specs),
     path("credentials/<int:pk>/", projects.credential_detail),
     path("projects/", projects.project_list),
     path("projects/import/", projects.project_import),
@@ -26,6 +28,15 @@ urlpatterns = [
     path(P + "references/", files.references),
     path(P + "references/<str:key>/", files.reference_detail),
     path(P + "cite/", files.cite),
+    # notebooks
+    path(P + "kernel/status/", notebook_views.kernel_status),
+    path(P + "kernel/start/", notebook_views.kernel_start),
+    path(P + "kernel/execute/", notebook_views.kernel_execute),
+    path(P + "kernel/interrupt/", notebook_views.kernel_interrupt),
+    path(P + "kernel/restart/", notebook_views.kernel_restart),
+    path(P + "kernel/shutdown/", notebook_views.kernel_shutdown),
+    path(P + "kernel/events/", notebook_views.kernel_events),
+    path(P + "kernel/comm/", notebook_views.kernel_comm),
     # git
     path(P + "git/status/", git_views.status),
     path(P + "git/commit/", git_views.commit),

@@ -1,0 +1,23 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        # Set to "false" for a much smaller image without PDF export.
+        INSTALL_LATEX: "true"
+        # numpy, pandas, matplotlib and scipy for running notebooks.
+        INSTALL_SCIENCE: "true"
+    image: document-manager
+    container_name: document-manager
+    restart: unless-stopped
+    ports:
+      # Only reachable from this computer. The app has no login, so do not expose it to the network.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Your projects (each a git repository) and the app database.
+      - ./data:/data
+      # Optional: use your SSH keys for git@github.com:... remotes. Uncomment one line.
+      # - ~/.ssh:/ssh:ro                      # macOS / Linux
+      # - ${USERPROFILE}/.ssh:/ssh:ro         # Windows
+    environment:
+      DM_ALLOWED_HOSTS: "localhost,127.0.0.1"
