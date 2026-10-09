@@ -405,7 +405,10 @@ td .progress { margin: 0; }
 .prose pre, .prose code, .nb-input, .citation { direction: ltr; unicode-bidi: isolate; }
 .prose pre { text-align: left; }
 /* Prose-friendly font when writing Markdown; LaTeX and code stay monospaced. */
-.code-editor.lang-markdown .cm-content { font-family: var(--font); font-size: 16px; line-height: 1.75; }
+.code-editor.lang-markdown { --md-fs: 16px; }
+.code-editor.lang-markdown .cm-content { font-family: var(--font); font-size: var(--md-fs); line-height: 1.75; }
+/* Line numbers get the text's line height so they sit level with the first line of text. */
+.code-editor.lang-markdown .cm-gutterElement { line-height: calc(var(--md-fs) * 1.75); }
 .code-editor .cm-line[dir="rtl"], .code-editor .cm-line { unicode-bidi: plaintext; }
 
 /* ------------------------------------------------------------ callouts (editor + notebook) */
@@ -428,6 +431,52 @@ td .progress { margin: 0; }
 .callout-title { font: 600 14px var(--font); color: var(--c); padding: 8px 12px 0; }
 .callout-body { padding: 2px 12px 4px; }
 .callout-body > :first-child { margin-top: 4px; }
+
+/* ------------------------------------------------------------ Markdown live preview (editors/livePreview.ts) */
+/* Styled lines and their line numbers (cm-lp-g-…, see LineClassMarker) share sizes and padding. */
+.cm-lp-h1, .cm-lp-g-h1 { --s: 1.8; } .cm-lp-h2, .cm-lp-g-h2 { --s: 1.5; } .cm-lp-h3, .cm-lp-g-h3 { --s: 1.25; }
+.cm-lp-h4, .cm-lp-g-h4 { --s: 1.1; }
+.cm-lp .cm-line.cm-lp-h { font-size: calc(var(--s, 1) * 1em); font-weight: 700; line-height: 1.35; padding-top: 0.45em; }
+.cm-lp .cm-gutterElement.cm-lp-g-h { padding-top: calc(var(--md-fs) * var(--s, 1) * 0.45); line-height: calc(var(--md-fs) * var(--s, 1) * 1.35); }
+.cm-lp .cm-lp-h * { text-decoration: none !important; }
+.cm-lp .cm-lp-h6 { color: var(--muted); }
+.cm-lp .cm-lp-strong { font-weight: 700; } .cm-lp .cm-lp-em { font-style: italic; } .cm-lp .cm-lp-strike { text-decoration: line-through; }
+.cm-lp .cm-lp-code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-2); border-radius: 4px; padding: 1px 4px; }
+.cm-lp .cm-lp-link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.cm-lp .cm-line.cm-lp-quote { border-inline-start: 3px solid var(--border); padding-inline-start: 12px; color: var(--muted); }
+:where(.cm-lp-callout) { --c: #3b6ea8; }
+[data-theme="dark"] :where(.cm-lp-callout) { --c: #6a9fd8; }
+.cm-lp .cm-line.cm-lp-callout { background: color-mix(in srgb, var(--c) 8%, var(--surface)); border-inline-start: 4px solid var(--c); padding-inline: 12px; }
+.cm-lp .cm-line.cm-lp-callout-title { color: var(--c); font-weight: 600; padding-top: 6px; border-start-end-radius: var(--radius); }
+.cm-lp .cm-gutterElement.cm-lp-g-callout-title { padding-top: 6px; }
+.cm-lp .cm-line.cm-lp-callout-last { padding-bottom: 6px; border-end-end-radius: var(--radius); }
+.cm-lp-callout-label { color: var(--c); font-weight: 600; }
+.cm-lp-bullet { color: var(--muted); font-weight: 700; }
+.cm-lp-task { margin: 0; margin-inline-end: 4px; vertical-align: middle; cursor: pointer; }
+.cm-lp .cm-line.cm-lp-task-done { color: var(--muted); }
+.cm-lp .cm-line.cm-lp-hr { background: linear-gradient(var(--border), var(--border)) center / 100% 1px no-repeat; }
+.cm-lp .cm-line.cm-lp-codeblock { font-family: var(--mono); font-size: 0.88em; line-height: 1.6; background: var(--surface-2); padding-inline: 12px; direction: ltr; text-align: left; }
+.cm-lp .cm-line.cm-lp-codeblock-start { border-start-start-radius: var(--radius); border-start-end-radius: var(--radius); padding-top: 4px; }
+.cm-lp .cm-gutterElement.cm-lp-g-codeblock { line-height: calc(var(--md-fs) * 0.88 * 1.6); }
+.cm-lp .cm-gutterElement.cm-lp-g-codeblock-start { padding-top: 4px; }
+.cm-lp .cm-line.cm-lp-codeblock-end { border-end-start-radius: var(--radius); border-end-end-radius: var(--radius); padding-bottom: 4px; }
+.cm-lp-fence-label { font: 11px var(--mono); color: var(--muted); }
+.cm-lp-math { direction: ltr; unicode-bidi: isolate; }
+.cm-lp-math-block { display: block; direction: ltr; text-align: center; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.cm-lp-math-block .katex-display { margin: 0.4em 0; }
+.cm-lp-math-preview { border: 1px dashed var(--border); border-radius: var(--radius); margin: 2px 0 6px; }
+.cm-lp .cm-lp-math-src { font-family: var(--mono); font-size: 0.9em; direction: ltr; unicode-bidi: isolate; }
+.cm-lp .cm-line.cm-lp-math-src { text-align: left; }
+.cm-lp .cm-gutterElement.cm-lp-g-math-src, .cm-lp .cm-gutterElement.cm-lp-g-table-src { line-height: calc(var(--md-fs) * 0.9 * 1.75); }
+.cm-lp-table { display: block; overflow-x: auto; font-size: 0.95em; }
+.cm-lp-table table { border-collapse: collapse; margin: 4px 0; }
+.cm-lp-table th, .cm-lp-table td { border: 1px solid var(--border); padding: 3px 10px; unicode-bidi: plaintext; text-align: start; }
+.cm-lp-table th { background: var(--surface-2); }
+.cm-lp .cm-line.cm-lp-table-src { font-family: var(--mono); font-size: 0.9em; }
+.cm-lp-image { display: block; max-width: 100%; max-height: 480px; margin: 6px 0; border-radius: var(--radius); }
+.cm-lp .cm-lp-cite { color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 3px; }
+.cm-lp .cm-lp-fn { vertical-align: super; font-size: 0.75em; color: var(--accent); }
+.cm-lp .cm-lp-fn-def { color: var(--muted); font-weight: 600; }
 
 /* ------------------------------------------------------------ code highlighting (rich text) */
 .rich-content pre { direction: ltr; text-align: left; }

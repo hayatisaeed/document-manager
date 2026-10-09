@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorView, type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { api, ApiError, download, qs } from "../api";
 import CodeEditor, { insertAtCursor, wrapSelection, ZWNJ } from "../editors/CodeEditor";
+import { livePreview } from "../editors/livePreview";
 import RichEditor, { CALLOUT_LABEL, CALLOUT_TYPES, CODE_LANGUAGES, RichEditorHandle } from "../editors/RichEditor";
 import NotebookView from "./NotebookView";
 import DrawingView from "./DrawingView";
@@ -13,7 +14,7 @@ import {
   type MarkRange, type TextAnchor,
 } from "../editors/commentMarks";
 import { t } from "../i18n";
-import { fmtNum, usePrefs } from "../prefs";
+import { fmtNum, setPrefs, usePrefs } from "../prefs";
 import Modal from "../components/Modal";
 import PreviewFrame from "../components/PreviewFrame";
 import { toast, toastError } from "../components/Toast";
@@ -80,7 +81,7 @@ function BinaryView({ item }: { item: TreeItem }) {
 function TextDocument({ path }: { path: string }) {
   const ws = useWorkspace();
   const { p, manifest, saveManifest, refreshStatus, editorRef, status, setView, tree } = ws;
-  const { dark } = usePrefs();
+  const { dark, mdLive } = usePrefs();
   const [content, setContent] = useState<string | null>(null);
   const [format, setFormat] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
@@ -197,6 +198,10 @@ function TextDocument({ path }: { path: string }) {
     },
     [p, path],
   );
+
+  const live = format === "markdown" && mdLive;
+  const liveExtension = useMemo(() => (live ? livePreview(resolveSrc) : []), [live, resolveSrc]);
+  const editorExtensions = useMemo(() => [cmExtensions, liveExtension], [cmExtensions, liveExtension]);
 
   const insertCitation = useCallback(
     (keys: string[]) => {
@@ -493,6 +498,15 @@ function TextDocument({ path }: { path: string }) {
           <button className="btn btn-sm" onClick={() => setView({ name: "history", path })}>
             {t("History")}
           </button>
+          {format === "markdown" && (
+            <button
+              className={`btn btn-sm ${mdLive ? "btn-active" : ""}`}
+              onClick={() => setPrefs({ mdLive: !mdLive })}
+              title={t("Show formatting, math, images and tables in place; the source appears where the cursor is")}
+            >
+              {t("Live preview")}
+            </button>
+          )}
           {format && (
             <>
               <button className={`btn btn-sm ${showPreview ? "btn-active" : ""}`} onClick={() => setShowPreview((s) => !s)}>
@@ -544,6 +558,9 @@ function TextDocument({ path }: { path: string }) {
               </button>
               <button className="tb" onClick={() => wrapSelection(view(), "$")} title={t("Inline math")}>
                 ∑
+              </button>
+              <button className="tb" onClick={() => wrapSelection(view(), "\n$$\n", "\n$$\n")} title={t("Math block")}>
+                $$
               </button>
               <button className="tb" onClick={() => insertAtCursor(view(), "[^1]")} title={t("Footnote")}>
                 {t("Footnote")}
@@ -642,7 +659,7 @@ function TextDocument({ path }: { path: string }) {
               }
             />
           ) : (
-            <CodeEditor editorRef={cmRef} value={content} onChange={onChange} language={language} extraExtensions={cmExtensions} onReady={() => setEditorReady((n) => n + 1)} />
+            <CodeEditor editorRef={cmRef} value={content} onChange={onChange} language={language} extraExtensions={editorExtensions} onReady={() => setEditorReady((n) => n + 1)} />
           )}
         </div>
         {showPreview && (
