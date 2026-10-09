@@ -160,6 +160,9 @@ def write_text(root: Path, rel: str, content: str) -> None:
     target = safe_path(root, rel)
     if doc_format(rel) == "html":
         content = format_html(content)
+    content = content.replace("\r\n", "\n")
+    if content and not content.endswith("\n"):
+        content += "\n"  # POSIX text files; avoids "No newline at end of file" noise in diffs.
     target.parent.mkdir(parents=True, exist_ok=True)
     # Always LF line endings so collaborators on Windows/macOS/Linux produce identical diffs.
     target.write_text(content.replace("\r\n", "\n"), encoding="utf-8", newline="\n")
