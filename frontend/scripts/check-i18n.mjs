@@ -2,8 +2,9 @@
 // Usage: node scripts/check-i18n.mjs   (exit code 1 when something is missing)
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const SRC = new URL("../src", import.meta.url).pathname;
+const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const files = [];
 (function walk(dir) {
   for (const name of readdirSync(dir)) {
